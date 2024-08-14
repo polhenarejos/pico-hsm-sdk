@@ -19,25 +19,32 @@
 #define _ASN1_H_
 
 #include <stdlib.h>
-#ifndef ENABLE_EMULATION
+#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
 #include "pico/stdlib.h"
 #else
 #include <stdint.h>
 #include <stdbool.h>
 #endif
 
-extern int walk_tlv(const uint8_t *cdata,
-                    size_t cdata_len,
+typedef struct asn1_ctx {
+    uint8_t *data;
+    uint16_t len;
+} asn1_ctx_t;
+
+extern int asn1_ctx_init(uint8_t *, uint16_t, asn1_ctx_t *);
+extern int asn1_ctx_clear(asn1_ctx_t *ctx);
+extern uint16_t asn1_len(asn1_ctx_t *ctx);
+extern uint32_t asn1_get_uint(asn1_ctx_t *ctx);
+
+extern int walk_tlv(const asn1_ctx_t *ctxi,
                     uint8_t **p,
                     uint16_t *tag,
-                    size_t *tag_len,
+                    uint16_t *tag_len,
                     uint8_t **data);
-extern int format_tlv_len(size_t len, uint8_t *out);
-extern bool asn1_find_tag(const uint8_t *data,
-                          size_t data_len,
+extern uint8_t format_tlv_len(uint16_t len, uint8_t *out);
+extern bool asn1_find_tag(const asn1_ctx_t *ctxi,
                           uint16_t itag,
-                          size_t *tag_len,
-                          uint8_t **tag_data);
-extern size_t asn1_len_tag(uint16_t tag, size_t len);
+                          asn1_ctx_t *ctxo);
+extern uint16_t asn1_len_tag(uint16_t tag, uint16_t len);
 
 #endif

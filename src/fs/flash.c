@@ -19,13 +19,17 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifndef ENABLE_EMULATION
-#include "pico/stdlib.h"
-#include "hardware/flash.h"
-#else
+#if defined(ENABLE_EMULATION) || defined(ESP_PLATFORM)
 #define XIP_BASE                0
 #define FLASH_SECTOR_SIZE       4096
+#ifdef ESP_PLATFORM
+#define PICO_FLASH_SIZE_BYTES   (1 * 1024 * 1024)
+#else
 #define PICO_FLASH_SIZE_BYTES   (8 * 1024 * 1024)
+#endif
+#else
+#include "pico/stdlib.h"
+#include "hardware/flash.h"
 #endif
 #include "pico_keys.h"
 #include "file.h"
@@ -38,7 +42,11 @@
  * |                                                    |
  * ------------------------------------------------------
  */
+#ifdef ESP_PLATFORM
+#define FLASH_TARGET_OFFSET 0
+#else
 #define FLASH_TARGET_OFFSET (PICO_FLASH_SIZE_BYTES >> 1) // DATA starts at the mid of flash
+#endif
 #define FLASH_DATA_HEADER_SIZE (sizeof(uintptr_t) + sizeof(uint32_t))
 #define FLASH_PERMANENT_REGION (4 * FLASH_SECTOR_SIZE) // 4 sectors (16kb) of permanent memory
 
@@ -75,8 +83,8 @@ uintptr_t allocate_free_addr(uint16_t size, bool persistent) {
         uintptr_t addr_alg = base & -FLASH_SECTOR_SIZE; //start address of sector
         uintptr_t potential_addr = base - real_size;
         next_base = flash_read_uintptr(base);
-        //printf("nb %x %x %x %x\r\n",base,next_base,addr_alg,potential_addr);
-        //printf("fid %x\r\n",flash_read_uint16(next_base+sizeof(uintptr_t)));
+        //printf("nb %x %x %x %x\n",base,next_base,addr_alg,potential_addr);
+        //printf("fid %x\n",flash_read_uint16(next_base+sizeof(uintptr_t)));
         if (next_base == 0x0) { //we are at the end
             //now we check if we fit in the current sector
             if (addr_alg <= potential_addr) { //it fits in the current sector
@@ -121,7 +129,7 @@ int flash_clear_file(file_t *file) {
         (uintptr_t)(file->data - sizeof(uintptr_t) - sizeof(uint16_t) - sizeof(uintptr_t));
     uintptr_t prev_addr = flash_read_uintptr(base_addr + sizeof(uintptr_t));
     uintptr_t next_addr = flash_read_uintptr(base_addr);
-    //printf("nc %lx->%lx   %lx->%lx\r\n",prev_addr,flash_read_uintptr(prev_addr),base_addr,next_addr);
+    //printf("nc %lx->%lx   %lx->%lx\n",prev_addr,flash_read_uintptr(prev_addr),base_addr,next_addr);
     flash_program_uintptr(prev_addr, next_addr);
     flash_program_halfword((uintptr_t) file->data, 0);
     if (next_addr > 0) {
@@ -130,7 +138,7 @@ int flash_clear_file(file_t *file) {
     flash_program_uintptr(base_addr, 0);
     flash_program_uintptr(base_addr + sizeof(uintptr_t), 0);
     file->data = NULL;
-    //printf("na %lx->%lx\r\n",prev_addr,flash_read_uintptr(prev_addr));
+    //printf("na %lx->%lx\n",prev_addr,flash_read_uintptr(prev_addr));
     return CCID_OK;
 }
 
@@ -165,7 +173,7 @@ int flash_write_data_to_file_offset(file_t *file, const uint8_t *data, uint16_t 
     }
 
     uintptr_t new_addr = allocate_free_addr(len, (file->type & FILE_PERSISTENT) == FILE_PERSISTENT);
-    //printf("na %x\r\n",new_addr);
+    //printf("na %x\n",new_addr);
     if (new_addr == 0x0) {
         return CCID_ERR_NO_MEMORY;
     }

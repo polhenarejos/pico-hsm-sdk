@@ -18,15 +18,17 @@
 #include <stdio.h>
 
 // Pico
-#ifndef ENABLE_EMULATION
+#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
-#include "tusb.h"
 #include "bsp/board.h"
 #endif
 #include "pico_keys.h"
 #include "usb.h"
 #include "apdu.h"
+#ifndef ENABLE_EMULATION
+#include "tusb.h"
+#endif
 
 // For memcpy
 #include <string.h>
@@ -47,7 +49,7 @@ uint32_t usb_write_offset(uint8_t itf, uint16_t len, uint16_t offset) {
 #ifndef ENABLE_EMULATION
     uint8_t pkt_max = 64;
 #endif
-    int w = 0;
+    uint16_t w = 0;
     if (len > sizeof(tx_buffer[itf])) {
         len = sizeof(tx_buffer[itf]);
     }
@@ -60,8 +62,8 @@ uint32_t usb_write_offset(uint8_t itf, uint16_t len, uint16_t offset) {
     }
 #endif
 #ifdef USB_ITF_CCID
-    if (itf == ITF_CCID) {
-        w = driver_write_ccid(tx_buffer[itf] + offset, MIN(len, pkt_max));
+    if (itf == ITF_CCID || itf == ITF_WCID) {
+        w = driver_write_ccid(itf, tx_buffer[itf] + offset, MIN(len, pkt_max));
     }
 #endif
 #else
@@ -72,8 +74,9 @@ uint32_t usb_write_offset(uint8_t itf, uint16_t len, uint16_t offset) {
     return w;
 }
 
-size_t usb_rx(uint8_t itf, const uint8_t *buffer, size_t len) {
-    uint16_t size = MIN(sizeof(rx_buffer[itf]) - w_offset[itf], len);
+#ifndef ENABLE_EMULATION
+uint16_t usb_rx(uint8_t itf, const uint8_t *buffer, uint16_t len) {
+    uint16_t size = MIN((uint16_t)sizeof(rx_buffer[itf]) - w_offset[itf], (uint16_t)len);
     if (size > 0) {
         if (buffer == NULL) {
 #ifdef USB_ITF_HID
@@ -82,8 +85,8 @@ size_t usb_rx(uint8_t itf, const uint8_t *buffer, size_t len) {
             }
 #endif
 #ifdef USB_ITF_CCID
-            if (itf == ITF_CCID) {
-                size = driver_read_ccid(rx_buffer[itf] + w_offset[itf], size);
+            if (itf == ITF_CCID || itf == ITF_WCID) {
+                size = (uint16_t)driver_read_ccid(itf, rx_buffer[itf] + w_offset[itf], size);
             }
 #endif
         }
@@ -94,9 +97,10 @@ size_t usb_rx(uint8_t itf, const uint8_t *buffer, size_t len) {
     }
     return size;
 }
+#endif
 
 uint32_t usb_write_flush(uint8_t itf) {
-    int w = 0;
+    uint16_t w = 0;
     if (w_len[itf] > 0) {
 #ifndef ENABLE_EMULATION
 #ifdef USB_ITF_HID
@@ -105,8 +109,8 @@ uint32_t usb_write_flush(uint8_t itf) {
         }
 #endif
 #ifdef USB_ITF_CCID
-        if (itf == ITF_CCID) {
-            w = driver_write_ccid(tx_buffer[itf] + tx_r_offset[itf], MIN(w_len[itf], 64));
+        if (itf == ITF_CCID || itf == ITF_WCID) {
+            w = driver_write_ccid(itf, tx_buffer[itf] + tx_r_offset[itf], MIN(w_len[itf], 64));
         }
 #endif
 #else
@@ -142,22 +146,32 @@ void usb_clear_rx(uint8_t itf) {
     w_offset[itf] = r_offset[itf] = 0;
 }
 
-#ifndef USB_VID
-#define USB_VID   0xFEFF
-#endif
-#ifndef USB_PID
-#define USB_PID   0xFCFD
-#endif
-
-#define USB_BCD   0x0200
-
-#ifndef ENABLE_EMULATION
+#if !defined(ENABLE_EMULATION)
 queue_t usb_to_card_q;
 queue_t card_to_usb_q;
 #endif
 
+#ifndef ENABLE_EMULATION
+extern tusb_desc_device_t desc_device;
+extern bool enable_wcid;
+#endif
 void usb_init() {
 #ifndef ENABLE_EMULATION
+    if (file_has_data(ef_phy)) {
+        uint8_t *data = file_get_data(ef_phy);
+        uint16_t opts = 0;
+        if (file_get_size(ef_phy) >= 8) {
+            opts = (data[PHY_OPTS] << 8) | data[PHY_OPTS+1];
+            if (opts & PHY_OPT_WCID) {
+                enable_wcid = true;
+            }
+        }
+        if (file_get_size(ef_phy) >= 4 && opts & PHY_OPT_VPID) {
+            desc_device.idVendor = (data[PHY_VID] << 8) | data[PHY_VID+1];
+            desc_device.idProduct = (data[PHY_PID] << 8) | data[PHY_PID+1];
+        }
+    }
+
     queue_init(&card_to_usb_q, sizeof(uint32_t), 64);
     queue_init(&usb_to_card_q, sizeof(uint32_t), 64);
 #endif
@@ -180,8 +194,8 @@ static int usb_event_handle(uint8_t itf) {
     }
 #endif
 #ifdef USB_ITF_CCID
-    if (itf == ITF_CCID) {
-        proc_packet = driver_process_usb_packet_ccid(rx_read);
+    if (itf == ITF_CCID || itf == ITF_WCID) {
+        proc_packet = driver_process_usb_packet_ccid(itf, rx_read);
     }
 #endif
 #else
@@ -217,7 +231,7 @@ void card_init_core1() {
 #endif
 }
 
-size_t finished_data_size = 0;
+uint16_t finished_data_size = 0;
 
 void card_start(void (*func)(void)) {
 #ifndef ENABLE_EMULATION
@@ -237,6 +251,8 @@ void card_start(void (*func)(void)) {
         multicore_launch_core1(func);
     }
     led_set_blink(BLINK_MOUNTED);
+#else
+    (void)func;
 #endif
 }
 
@@ -263,8 +279,8 @@ void usb_task() {
         }
 #endif
 #ifdef USB_ITF_CCID
-        if (itf == ITF_CCID) {
-            mounted = driver_mounted_ccid();
+        if (itf == ITF_CCID || itf == ITF_WCID) {
+            mounted = driver_mounted_ccid(itf);
         }
 #endif
 #endif
@@ -279,7 +295,7 @@ void usb_task() {
                 uint32_t m = 0x0;
                 bool has_m = queue_try_remove(&card_to_usb_q, &m);
                 //if (m != 0)
-                //    printf("\r\n ------ M = %lu\r\n",m);
+                //    printf("\n ------ M = %lu\n",m);
                 if (has_m) {
                     if (m == EV_EXEC_FINISHED) {
                         timeout_stop();
@@ -289,8 +305,8 @@ void usb_task() {
                         }
 #endif
 #ifdef USB_ITF_CCID
-                        if (itf == ITF_CCID) {
-                            driver_exec_finished_ccid(finished_data_size);
+                        if (itf == ITF_CCID || itf == ITF_WCID) {
+                            driver_exec_finished_ccid(itf, finished_data_size);
                         }
 #endif
                         led_set_blink(BLINK_MOUNTED);
@@ -310,8 +326,8 @@ void usb_task() {
                             }
 #endif
 #ifdef USB_ITF_CCID
-                            if (itf == ITF_CCID) {
-                                driver_exec_timeout_ccid();
+                            if (itf == ITF_CCID || itf == ITF_WCID) {
+                                driver_exec_timeout_ccid(itf);
                             }
 #endif
                             timeout = board_millis();
@@ -338,8 +354,8 @@ uint8_t *usb_prepare_response(uint8_t itf) {
     }
 #endif
 #ifdef USB_ITF_CCID
-    if (itf == ITF_CCID) {
-        return driver_prepare_response_ccid();
+    if (itf == ITF_CCID || itf == ITF_WCID) {
+        return driver_prepare_response_ccid(itf);
     }
 #endif
     return NULL;

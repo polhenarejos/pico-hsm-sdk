@@ -20,16 +20,17 @@
 #define _FILE_H_
 
 #include <stdlib.h>
-#ifndef ENABLE_EMULATION
+#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
 #include "pico/stdlib.h"
 #else
 #include <stdbool.h>
 #include <stdint.h>
 #endif
+#include "compat.h"
 
-#define FILE_TYPE_UNKNOWN       0x00
+#define FILE_TYPE_NOT_KNOWN     0x00
 #define FILE_TYPE_DF            0x04
-#define FILE_TYPE_INTERNAL_EF   0x03
+#define FILE_TYPE_INTERNAL_EF   0x02
 #define FILE_TYPE_WORKING_EF    0x01
 #define FILE_TYPE_BSO           0x10
 #define FILE_PERSISTENT         0x20
@@ -66,9 +67,26 @@
 #define EF_SKDFS    0x6045
 #define EF_META     0xE010
 
+#define EF_PHY       0xE020
+
+#define PHY_VID         0x0
+#define PHY_PID         0x2
+#define PHY_LED_GPIO    0x4
+#define PHY_LED_MODE    0x5
+#define PHY_OPTS        0x6
+
+#define PHY_OPT_WCID    0x1
+#define PHY_OPT_VPID    0x2
+#define PHY_OPT_GPIO    0x4
+#define PHY_OPT_LED     0x8
+
+#define PHY_OPT_MASK    (PHY_OPT_WCID)
+
+#define PHY_MAX_SIZE    8
+
 #define MAX_DEPTH 4
 
-typedef struct file {
+typedef PACK(struct file {
     const uint16_t fid;
     const uint8_t parent; //entry number in the whole table!!
     const uint8_t *name;
@@ -76,7 +94,7 @@ typedef struct file {
     const uint8_t ef_structure;
     uint8_t *data; //should include 2 bytes len at begining
     const uint8_t acl[7];
-} __attribute__((packed)) file_t;
+}) file_t;
 
 extern bool file_has_data(file_t *);
 
@@ -95,6 +113,7 @@ extern file_t *file_sopin;
 extern file_t *file_retries_sopin;
 
 extern file_t *search_by_fid(const uint16_t fid, const file_t *parent, const uint8_t sp);
+extern file_t *search_file(const uint16_t fid);
 extern file_t *search_by_name(uint8_t *name, uint16_t namelen);
 extern file_t *search_by_path(const uint8_t *pe_path, uint8_t pathlen, const file_t *parent);
 extern bool authenticate_action(const file_t *ef, uint8_t op);
@@ -106,9 +125,11 @@ extern file_t file_entries[];
 
 extern uint8_t *file_read(const uint8_t *addr);
 extern uint16_t file_read_uint16(const uint8_t *addr);
-extern uint8_t file_read_uint8(const uint8_t *addr);
+extern uint8_t file_read_uint8(const file_t *ef);
+extern uint8_t file_read_uint8_offset(const file_t *ef, const uint16_t offset);
 extern uint8_t *file_get_data(const file_t *tf);
 extern uint16_t file_get_size(const file_t *tf);
+extern int file_put_data(file_t *file, const uint8_t *data, uint16_t len);
 extern file_t *file_new(uint16_t);
 file_t *get_parent(file_t *f);
 
@@ -119,9 +140,13 @@ extern int delete_dynamic_file(file_t *f);
 
 extern bool isUserAuthenticated;
 
-extern int meta_find(uint16_t, uint8_t **out);
+extern uint16_t meta_find(uint16_t, uint8_t **out);
 extern int meta_delete(uint16_t fid);
 extern int meta_add(uint16_t fid, const uint8_t *data, uint16_t len);
 extern int delete_file(file_t *ef);
 
+#ifndef ENABLE_EMULATION
+extern file_t *ef_phy;
 #endif
+
+#endif // _FILE_H_

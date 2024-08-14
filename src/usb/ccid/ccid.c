@@ -15,28 +15,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
-
-// Pico
-#include "pico/stdlib.h"
-
-// For memcpy
-#include <string.h>
-
-// Include descriptor struct definitions
-//#include "usb_common.h"
-// USB register definitions from pico-sdk
-#include "hardware/regs/usb.h"
-// USB hardware struct definitions from pico-sdk
-#include "hardware/structs/usb.h"
-// For interrupt enable and numbers
-#include "hardware/irq.h"
-// For resetting the USB controller
-#include "hardware/resets.h"
-
 #include "random.h"
 #include "pico_keys.h"
+#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
 #include "hardware/rtc.h"
+#endif
 #include "tusb.h"
 #include "ccid.h"
 #include "device/usbd_pvt.h"
@@ -101,109 +84,108 @@ struct ccid_header {
 
 uint8_t ccid_status = 1;
 static uint8_t itf_num;
-extern tusb_desc_endpoint_t const desc_ep3;
 
-void ccid_write_offset(uint16_t size, uint16_t offset) {
-    if (*usb_get_tx(ITF_CCID) + offset != 0x81) {
-        DEBUG_PAYLOAD(usb_get_tx(ITF_CCID) + offset, size + 10);
+void ccid_write_offset(uint8_t itf, uint16_t size, uint16_t offset) {
+    if (*usb_get_tx(itf) + offset != 0x81) {
+        DEBUG_PAYLOAD(usb_get_tx(itf) + offset, size + 10);
     }
-    usb_write_offset(ITF_CCID, size + 10, offset);
+    usb_write_offset(itf, size + 10, offset);
 }
 
-void ccid_write(uint16_t size) {
-    ccid_write_offset(size, 0);
+void ccid_write(uint8_t itf, uint16_t size) {
+    ccid_write_offset(itf, size, 0);
 }
 
-struct ccid_header *ccid_response;
-struct ccid_header *ccid_header;
+struct ccid_header *ccid_response[ITF_TOTAL];
+struct ccid_header *ccid_header[ITF_TOTAL];
 
-int driver_init_ccid() {
-    ccid_header = (struct ccid_header *) usb_get_rx(ITF_CCID);
+int driver_init_ccid(uint8_t itf) {
+    ccid_header[itf] = (struct ccid_header *) usb_get_rx(itf);
 //    apdu.header = &ccid_header->apdu;
 
-    ccid_response = (struct ccid_header *) usb_get_tx(ITF_CCID);
+    ccid_response[itf] = (struct ccid_header *) usb_get_tx(itf);
 
-    usb_set_timeout_counter(ITF_CCID, 1500);
+    usb_set_timeout_counter(itf, 1500);
 
     return CCID_OK;
 }
 
 void tud_vendor_rx_cb(uint8_t itf) {
-    (void) itf;
-
-    uint32_t len = tud_vendor_available();
-    usb_rx(ITF_CCID, NULL, len);
+    uint32_t len = tud_vendor_n_available(itf);
+    usb_rx(itf, NULL, len);
 }
 
 void tud_vendor_tx_cb(uint8_t itf, uint32_t sent_bytes) {
     //printf("written %ld\n", sent_bytes);
-    usb_write_flush(ITF_CCID);
+    usb_write_flush(itf);
 }
 
-int driver_write_ccid(const uint8_t *buffer, size_t buffer_size) {
-    int r = tud_vendor_write(buffer, buffer_size);
+int driver_write_ccid(uint8_t itf, const uint8_t *buffer, uint16_t buffer_size) {
+    int r = tud_vendor_n_write(itf, buffer, buffer_size);
     if (r > 0) {
-        return MAX(tud_vendor_flush(), r);
+        return MAX(tud_vendor_n_flush(itf), r);
     }
     return r;
 }
 
-size_t driver_read_ccid(uint8_t *buffer, size_t buffer_size) {
-    return tud_vendor_read(buffer, buffer_size);
+uint16_t driver_read_ccid(uint8_t itf, uint8_t *buffer, uint16_t buffer_size) {
+    return tud_vendor_n_read(itf, buffer, buffer_size);
 }
 
 int driver_process_usb_nopacket_ccid() {
     return 0;
 }
 
-int driver_process_usb_packet_ccid(uint16_t rx_read) {
+int driver_process_usb_packet_ccid(uint8_t itf, uint16_t rx_read) {
     if (rx_read >= 10) {
-        driver_init_ccid();
-        //printf("%d %d %x\r\n",tccid->dwLength,rx_read-10,tccid->bMessageType);
-        if (ccid_header->dwLength <= rx_read - 10) {
+        driver_init_ccid(itf);
+        //printf("%ld %d %x %x\n",ccid_header->dwLength,rx_read-10,ccid_header->bMessageType,ccid_header->bSeq);
+        if (ccid_header[itf]->dwLength <= rx_read - 10) {
             size_t apdu_sent = 0;
-            if (ccid_header->bMessageType != CCID_SLOT_STATUS) {
-                DEBUG_PAYLOAD(usb_get_rx(ITF_CCID), usb_read_available(ITF_CCID));
+            if (ccid_header[itf]->bMessageType != CCID_SLOT_STATUS) {
+                DEBUG_PAYLOAD(usb_get_rx(itf), usb_read_available(itf));
             }
-            if (ccid_header->bMessageType == CCID_SLOT_STATUS) {
-                ccid_response->bMessageType = CCID_SLOT_STATUS_RET;
-                ccid_response->dwLength = 0;
-                ccid_response->bSlot = 0;
-                ccid_response->bSeq = ccid_header->bSeq;
-                ccid_response->abRFU0 = ccid_status;
-                ccid_response->abRFU1 = 0;
-                ccid_write(0);
+            if (ccid_header[itf]->bMessageType == CCID_SLOT_STATUS) {
+                ccid_response[itf]->bMessageType = CCID_SLOT_STATUS_RET;
+                ccid_response[itf]->dwLength = 0;
+                ccid_response[itf]->bSlot = 0;
+                ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+                ccid_response[itf]->abRFU0 = ccid_status;
+                ccid_response[itf]->abRFU1 = 0;
+                ccid_write(itf, 0);
             }
-            else if (ccid_header->bMessageType == CCID_POWER_ON) {
+            else if (ccid_header[itf]->bMessageType == CCID_POWER_ON) {
                 size_t size_atr = (ccid_atr ? ccid_atr[0] : 0);
-                ccid_response->bMessageType = CCID_DATA_BLOCK_RET;
-                ccid_response->dwLength = size_atr;
-                ccid_response->bSlot = 0;
-                ccid_response->bSeq = ccid_header->bSeq;
-                ccid_response->abRFU0 = 0;
-                ccid_response->abRFU1 = 0;
-                //printf("1 %x %x %x || %x %x %x\r\n",ccid_response->apdu,apdu.rdata,ccid_response,ccid_header,ccid_header->apdu,apdu.data);
-                memcpy(&ccid_response->apdu, ccid_atr + 1, size_atr);
-                card_start(apdu_thread);
+                ccid_response[itf]->bMessageType = CCID_DATA_BLOCK_RET;
+                ccid_response[itf]->dwLength = size_atr;
+                ccid_response[itf]->bSlot = 0;
+                ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+                ccid_response[itf]->abRFU0 = 0;
+                ccid_response[itf]->abRFU1 = 0;
+                //printf("1 %x %x %x || %x %x %x\n",ccid_response->apdu,apdu.rdata,ccid_response,ccid_header,ccid_header->apdu,apdu.data);
+                memcpy(&ccid_response[itf]->apdu, ccid_atr + 1, size_atr);
+                if (ccid_status == 1) {
+                    card_start(apdu_thread);
+                }
                 ccid_status = 0;
-                ccid_write(size_atr);
+                ccid_write(itf, size_atr);
             }
-            else if (ccid_header->bMessageType == CCID_POWER_OFF) {
+            else if (ccid_header[itf]->bMessageType == CCID_POWER_OFF) {
                 if (ccid_status == 0) {
                     card_exit(0);
                 }
                 ccid_status = 1;
-                ccid_response->bMessageType = CCID_SLOT_STATUS_RET;
-                ccid_response->dwLength = 0;
-                ccid_response->bSlot = 0;
-                ccid_response->bSeq = ccid_header->bSeq;
-                ccid_response->abRFU0 = ccid_status;
-                ccid_response->abRFU1 = 0;
-                ccid_write(0);
+                ccid_response[itf]->bMessageType = CCID_SLOT_STATUS_RET;
+                ccid_response[itf]->dwLength = 0;
+                ccid_response[itf]->bSlot = 0;
+                ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+                ccid_response[itf]->abRFU0 = ccid_status;
+                ccid_response[itf]->abRFU1 = 0;
+                ccid_write(itf, 0);
             }
-            else if (ccid_header->bMessageType == CCID_SET_PARAMS ||
-                     ccid_header->bMessageType == CCID_GET_PARAMS ||
-                     ccid_header->bMessageType == CCID_RESET_PARAMS) {
+            else if (ccid_header[itf]->bMessageType == CCID_SET_PARAMS ||
+                     ccid_header[itf]->bMessageType == CCID_GET_PARAMS ||
+                     ccid_header[itf]->bMessageType == CCID_RESET_PARAMS) {
                 /* Values from gnuk. Not specified in ICCD spec. */
                 const uint8_t params[] =  {
                     0x11, /* bmFindexDindex */
@@ -214,103 +196,101 @@ int driver_process_usb_packet_ccid(uint16_t rx_read) {
                     0xFE, /* bIFSC */
                     0    /* bNadValue */
                 };
-                ccid_response->bMessageType = CCID_PARAMS_RET;
-                ccid_response->dwLength = sizeof(params);
-                ccid_response->bSlot = 0;
-                ccid_response->bSeq = ccid_header->bSeq;
-                ccid_response->abRFU0 = ccid_status;
-                ccid_response->abRFU1 = 0x0100;
-                memcpy(&ccid_response->apdu, params, sizeof(params));
-                ccid_write(sizeof(params));
+                ccid_response[itf]->bMessageType = CCID_PARAMS_RET;
+                ccid_response[itf]->dwLength = sizeof(params);
+                ccid_response[itf]->bSlot = 0;
+                ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+                ccid_response[itf]->abRFU0 = ccid_status;
+                ccid_response[itf]->abRFU1 = 0x0100;
+                memcpy(&ccid_response[itf]->apdu, params, sizeof(params));
+                ccid_write(itf, sizeof(params));
             }
-            else if (ccid_header->bMessageType == CCID_XFR_BLOCK) {
-                apdu_sent = apdu_process(ITF_CCID, &ccid_header->apdu, ccid_header->dwLength);
+            else if (ccid_header[itf]->bMessageType == CCID_XFR_BLOCK) {
+                apdu_sent = apdu_process(itf, &ccid_header[itf]->apdu, ccid_header[itf]->dwLength);
             }
-            usb_clear_rx(ITF_CCID);
+            usb_clear_rx(itf);
             return apdu_sent;
         }
     }
     return 0;
 }
 
-bool driver_mounted_ccid() {
-    return tud_vendor_mounted();
+bool driver_mounted_ccid(uint8_t itf) {
+    return tud_vendor_n_mounted(itf);
 }
 
-void driver_exec_timeout_ccid() {
-    ccid_response->bMessageType = CCID_DATA_BLOCK_RET;
-    ccid_response->dwLength = 0;
-    ccid_response->bSlot = 0;
-    ccid_response->bSeq = ccid_header->bSeq;
-    ccid_response->abRFU0 = CCID_CMD_STATUS_TIMEEXT;
-    ccid_response->abRFU1 = 0;
-    ccid_write(0);
+void driver_exec_timeout_ccid(uint8_t itf) {
+    ccid_header[itf] = (struct ccid_header *) usb_get_rx(itf);
+    ccid_response[itf] = (struct ccid_header *) (usb_get_tx(itf));
+    ccid_response[itf]->bMessageType = CCID_DATA_BLOCK_RET;
+    ccid_response[itf]->dwLength = 0;
+    ccid_response[itf]->bSlot = 0;
+    ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+    ccid_response[itf]->abRFU0 = CCID_CMD_STATUS_TIMEEXT;
+    ccid_response[itf]->abRFU1 = 0;
+    ccid_write(itf, 0);
 }
 
-void driver_exec_finished_ccid(size_t size_next) {
-    ccid_response->bMessageType = CCID_DATA_BLOCK_RET;
-    ccid_response->dwLength = size_next;
-    ccid_response->bSlot = 0;
-    ccid_response->bSeq = ccid_header->bSeq;
-    ccid_response->abRFU0 = ccid_status;
-    ccid_response->abRFU1 = 0;
-    ccid_write(size_next);
+void driver_exec_finished_ccid(uint8_t itf, uint16_t size_next) {
+    ccid_header[itf] = (struct ccid_header *) usb_get_rx(itf);
+    ccid_response[itf] = (struct ccid_header *) (usb_get_tx(itf) + 34);
+    ccid_response[itf]->bMessageType = CCID_DATA_BLOCK_RET;
+    ccid_response[itf]->dwLength = size_next;
+    ccid_response[itf]->bSlot = 0;
+    ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+    ccid_response[itf]->abRFU0 = ccid_status;
+    ccid_response[itf]->abRFU1 = 0;
+    ccid_write_offset(itf, size_next, 34);
 }
 
-void driver_exec_finished_cont_ccid(size_t size_next, size_t offset) {
-
-    ccid_response = (struct ccid_header *) (usb_get_tx(ITF_CCID) + offset - 10);
-    ccid_response->bMessageType = CCID_DATA_BLOCK_RET;
-    ccid_response->dwLength = size_next;
-    ccid_response->bSlot = 0;
-    ccid_response->bSeq = ccid_header->bSeq;
-    ccid_response->abRFU0 = ccid_status;
-    ccid_response->abRFU1 = 0;
-    ccid_write_offset(size_next, offset - 10);
+void driver_exec_finished_cont_ccid(uint8_t itf, uint16_t size_next, uint16_t offset) {
+    ccid_header[itf] = (struct ccid_header *) usb_get_rx(itf);
+    ccid_response[itf] = (struct ccid_header *) (usb_get_tx(itf) + offset - 10 + 34);
+    ccid_response[itf]->bMessageType = CCID_DATA_BLOCK_RET;
+    ccid_response[itf]->dwLength = size_next;
+    ccid_response[itf]->bSlot = 0;
+    ccid_response[itf]->bSeq = ccid_header[itf]->bSeq;
+    ccid_response[itf]->abRFU0 = ccid_status;
+    ccid_response[itf]->abRFU1 = 0;
+    ccid_write_offset(itf, size_next, offset - 10 + 34);
 }
 
-uint8_t *driver_prepare_response_ccid() {
-    ccid_response = (struct ccid_header *) usb_get_tx(ITF_CCID);
-    apdu.rdata = &ccid_response->apdu;
-    return &ccid_response->apdu;
+uint8_t *driver_prepare_response_ccid(uint8_t itf) {
+    ccid_response[itf] = (struct ccid_header *) (usb_get_tx(itf) + 34);
+    apdu.rdata = &ccid_response[itf]->apdu;
+    apdu.rlen = 0;
+    return &ccid_response[itf]->apdu;
 }
 #define USB_CONFIG_ATT_ONE TU_BIT(7)
 
 #define MAX_USB_POWER       1
 
 static void ccid_init_cb(void) {
-    TU_LOG1("-------- CCID INIT\r\n");
     vendord_init();
 }
 
 static void ccid_reset_cb(uint8_t rhport) {
-    TU_LOG1("-------- CCID RESET\r\n");
     itf_num = 0;
     vendord_reset(rhport);
 }
 
 static uint16_t ccid_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
     uint8_t *itf_vendor = (uint8_t *) malloc(sizeof(uint8_t) * max_len);
-    //TU_LOG1("-------- CCID OPEN\r\n");
-    TU_VERIFY(
-        itf_desc->bInterfaceClass == TUSB_CLASS_SMART_CARD && itf_desc->bInterfaceSubClass == 0 && itf_desc->bInterfaceProtocol == 0,
-        0);
+    TU_VERIFY( itf_desc->bInterfaceClass == TUSB_CLASS_SMART_CARD && itf_desc->bInterfaceSubClass == 0 && itf_desc->bInterfaceProtocol == 0, 0);
 
     //vendord_open expects a CLASS_VENDOR interface class
+    uint16_t const drv_len = sizeof(tusb_desc_interface_t) + sizeof(struct ccid_class_descriptor) + 3 * sizeof(tusb_desc_endpoint_t);
     memcpy(itf_vendor, itf_desc, sizeof(uint8_t) * max_len);
     ((tusb_desc_interface_t *) itf_vendor)->bInterfaceClass = TUSB_CLASS_VENDOR_SPECIFIC;
     ((tusb_desc_interface_t *) itf_vendor)->bNumEndpoints -= 1;
-    vendord_open(rhport,
-                 (tusb_desc_interface_t *) itf_vendor,
-                 max_len - sizeof(tusb_desc_endpoint_t));
-    TU_ASSERT(usbd_edpt_open(rhport, &desc_ep3), 0);
+    vendord_open(rhport, (tusb_desc_interface_t *) itf_vendor, max_len - sizeof(tusb_desc_endpoint_t));
+    tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)((uint8_t *)itf_desc + drv_len - sizeof(tusb_desc_endpoint_t));
+    TU_ASSERT(usbd_edpt_open(rhport, desc_ep), 0);
     free(itf_vendor);
 
     uint8_t msg[] = { 0x50, 0x03 };
-    usbd_edpt_xfer(rhport, desc_ep3.bEndpointAddress, msg, sizeof(msg));
+    usbd_edpt_xfer(rhport, desc_ep->bEndpointAddress, msg, sizeof(msg));
 
-    uint16_t const drv_len = sizeof(tusb_desc_interface_t) + sizeof(struct ccid_class_descriptor) +
-                             3 * sizeof(tusb_desc_endpoint_t);
     TU_VERIFY(max_len >= drv_len, 0);
 
     itf_num = itf_desc->bInterfaceNumber;
@@ -322,13 +302,13 @@ static bool ccid_control_xfer_cb(uint8_t __unused rhport,
                                  uint8_t stage,
                                  tusb_control_request_t const *request) {
     // nothing to do with DATA & ACK stage
-    TU_LOG2("-------- CCID CTRL XFER\r\n");
+    TU_LOG2("-------- CCID CTRL XFER\n");
     if (stage != CONTROL_STAGE_SETUP) {
         return true;
     }
 
     if (request->wIndex == itf_num) {
-        TU_LOG2("-------- bmRequestType %x, bRequest %x, wValue %x, wLength %x\r\n",
+        TU_LOG2("-------- bmRequestType %x, bRequest %x, wValue %x, wLength %x\n",
                 request->bmRequestType,
                 request->bRequest,
                 request->wValue,
@@ -366,7 +346,7 @@ static bool ccid_xfer_cb(uint8_t rhport,
                          uint8_t ep_addr,
                          xfer_result_t result,
                          uint32_t xferred_bytes) {
-    //printf("------ CALLED XFER_CB\r\n");
+    //printf("------ CALLED XFER_CB\n");
     return vendord_xfer_cb(rhport, ep_addr, result, xferred_bytes);
     //return true;
 }

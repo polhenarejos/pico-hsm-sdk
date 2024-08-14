@@ -248,7 +248,9 @@
  *
  * Uncomment to get warnings on using deprecated functions and features.
  */
+#if (defined(__GNUC__) || defined(__clang__))
 #define MBEDTLS_DEPRECATED_WARNING
+#endif
 
 /**
  * \def MBEDTLS_DEPRECATED_REMOVED
@@ -2248,7 +2250,7 @@
  * \warning   DES is considered a weak cipher and its use constitutes a
  *            security risk. We recommend considering stronger ciphers instead.
  */
-//#define MBEDTLS_DES_C
+#define MBEDTLS_DES_C
 
 /**
  * \def MBEDTLS_DHM_C
