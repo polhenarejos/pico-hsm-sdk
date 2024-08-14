@@ -106,44 +106,45 @@ endif()
 message(STATUS "USB VID/PID: ${USB_VID}:${USB_PID}")
 
 set(MBEDTLS_SOURCES
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/aes.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/asn1parse.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/asn1write.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/bignum.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/bignum_core.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ccm.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/cmac.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/cipher.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/cipher_wrap.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/constant_time.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ecdsa.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/eddsa.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ecdh.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ecp.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ecp_curves.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/gcm.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/hkdf.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/md.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/md5.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/oid.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pkcs5.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/platform_util.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/rsa.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/rsa_alt_helpers.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/sha1.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/sha256.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/sha512.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/chachapoly.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/chacha20.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/poly1305.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ripemd160.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/des.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/aes.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/asn1parse.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/asn1write.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/bignum.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/bignum_core.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ccm.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/cmac.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/cipher.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/cipher_wrap.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/constant_time.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ecdsa.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/eddsa.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ecdh.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ecp.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ecp_curves.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/gcm.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/hkdf.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/md.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/md5.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/oid.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pkcs5.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/platform_util.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/rsa.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/rsa_alt_helpers.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/sha1.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/sha3.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/sha256.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/sha512.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/chachapoly.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/chacha20.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/poly1305.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ripemd160.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/des.c
     ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write_crt.c
     ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509_create.c
     ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write_csr.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pk.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pk_wrap.c
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pkwrite.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pk.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pk_wrap.c
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pkwrite.c
 )
 
 set(SOURCES ${SOURCES}
@@ -162,7 +163,7 @@ set(SOURCES ${SOURCES}
 ## mbedTLS reports an stringop overflow for cmac.c
 if (NOT ENABLE_EMULATION AND NOT APPLE)
     set_source_files_properties(
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/cmac.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/cmac.c
         PROPERTIES
         COMPILE_FLAGS "-Wno-error=stringop-overflow= -Wno-stringop-overflow"
     )
@@ -172,8 +173,11 @@ set(INCLUDES ${INCLUDES}
     ${CMAKE_CURRENT_LIST_DIR}/src/usb
     ${CMAKE_CURRENT_LIST_DIR}/src/fs
     ${CMAKE_CURRENT_LIST_DIR}/src/rng
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/include
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/core
+    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/include
     ${CMAKE_CURRENT_LIST_DIR}/mbedtls/include
-    ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library
 )
 
 if(USB_ITF_HID OR ENABLE_EMULATION)
@@ -181,9 +185,9 @@ if(USB_ITF_HID OR ENABLE_EMULATION)
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write_crt.c
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509_create.c
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write_csr.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pk.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pk_wrap.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pkwrite.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pk.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pk_wrap.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pkwrite.c
     )
     set(CBOR_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/tinycbor/src/cborencoder.c
@@ -239,13 +243,13 @@ if (ENABLE_EMULATION)
         ${CMAKE_CURRENT_LIST_DIR}/src/usb/emulation/emulation.c
     )
     set(MBEDTLS_SOURCES ${MBEDTLS_SOURCES}
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/ctr_drbg.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/entropy.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/entropy_poll.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/aesni.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/pem.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ctr_drbg.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/entropy.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/entropy_poll.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/aesni.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pem.c
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/base64.c
+        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/base64.c
     )
     set(INCLUDES ${INCLUDES}
         ${CMAKE_CURRENT_LIST_DIR}/src/usb/emulation
