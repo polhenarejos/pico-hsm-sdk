@@ -18,6 +18,10 @@
 #ifndef _PICO_KEYS_H_
 #define _PICO_KEYS_H_
 
+#if defined(PICO_RP2040) || defined(PICO_RP2350)
+#define PICO_PLATFORM
+#endif
+
 #include "file.h"
 #if defined(ENABLE_EMULATION) || defined(ESP_PLATFORM)
 #include <stdint.h>
@@ -74,9 +78,6 @@ static inline void put_uint16_t(uint16_t n, uint8_t *b) {
 
 extern void low_flash_available();
 extern int flash_clear_file(file_t *file);
-
-extern void timeout_stop();
-extern void timeout_start();
 
 extern int (*button_pressed_cb)(uint8_t);
 

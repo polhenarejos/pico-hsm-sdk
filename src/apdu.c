@@ -22,6 +22,9 @@
 #ifdef ESP_PLATFORM
 #include "esp_compat.h"
 #endif
+#ifdef ENABLE_EMULATION
+#include "emulation.h"
+#endif
 
 uint8_t *rdata_gr = NULL;
 uint16_t rdata_bk = 0x0;
@@ -48,27 +51,13 @@ int process_apdu() {
         if (is_chaining) {
             memmove(apdu.data + (chain_ptr - chain_buf), apdu.data, apdu.nc);
             memcpy(apdu.data, chain_buf, chain_ptr - chain_buf);
-            apdu.nc += chain_ptr - chain_buf;
+            apdu.nc += (uint16_t)(chain_ptr - chain_buf);
             is_chaining = false;
         }
     }
     if (INS(apdu) == 0xA4 && P1(apdu) == 0x04 && (P2(apdu) == 0x00 || P2(apdu) == 0x4)) { //select by AID
-        for (int a = 0; a < num_apps; a++) {
-            if (!memcmp(apps[a].aid + 1, apdu.data, MIN(apdu.nc, apps[a].aid[0]))) {
-                if (current_app) {
-                    if (current_app->aid && !memcmp(current_app->aid + 1, apdu.data, apdu.nc)) {
-                        current_app->select_aid(current_app);
-                        return SW_OK();
-                    }
-                    if (current_app->unload) {
-                        current_app->unload();
-                    }
-                }
-                current_app = &apps[a];
-                if (current_app->select_aid(current_app) == CCID_OK) {
-                    return SW_OK();
-                }
-            }
+        if (select_app(apdu.data, apdu.nc) == CCID_OK) {
+            return SW_OK();
         }
         return SW_FILE_NOT_FOUND();
     }
@@ -132,22 +121,22 @@ uint16_t apdu_process(uint8_t itf, const uint8_t *buffer, uint16_t buffer_size) 
         if (apdu.rlen <= apdu.ne) {
 #ifndef ENABLE_EMULATION
 #ifdef USB_ITF_HID
-            if (itf == ITF_HID) {
-                driver_exec_finished_cont_hid(itf, apdu.rlen + 2, rdata_gr - (usb_get_tx(itf)));
+            if (itf == ITF_HID_CTAP) {
+                driver_exec_finished_cont_hid(itf, apdu.rlen + 2, rdata_gr - apdu.rdata);
             }
 #endif
 #ifdef USB_ITF_CCID
-            if (itf == ITF_CCID || itf == ITF_WCID) {
-                driver_exec_finished_cont_ccid(itf, apdu.rlen + 2, rdata_gr - (usb_get_tx(itf) + 34));
+            if (itf == ITF_SC_CCID || itf == ITF_SC_WCID) {
+                driver_exec_finished_cont_ccid(itf, apdu.rlen + 2, rdata_gr - apdu.rdata);
             }
 #endif
 #else
-            driver_exec_finished_cont_emul(itf, apdu.rlen + 2, (uint16_t)(rdata_gr - (usb_get_tx(itf))));
+            driver_exec_finished_cont_emul(itf, apdu.rlen + 2, (uint16_t)(rdata_gr - apdu.rdata));
 #endif
             //Prepare next RAPDU
             apdu.sw = 0;
             apdu.rlen = 0;
-            usb_prepare_response(itf);
+            rdata_gr = apdu.rdata;
         }
         else {
             rdata_gr += apdu.ne;
@@ -161,17 +150,17 @@ uint16_t apdu_process(uint8_t itf, const uint8_t *buffer, uint16_t buffer_size) 
             }
 #ifndef ENABLE_EMULATION
 #ifdef USB_ITF_HID
-            if (itf == ITF_HID) {
-                driver_exec_finished_cont_hid(itf, apdu.ne + 2, rdata_gr - apdu.ne - (usb_get_tx(itf)));
+            if (itf == ITF_HID_CTAP) {
+                driver_exec_finished_cont_hid(itf, apdu.ne + 2, rdata_gr - apdu.ne - apdu.rdata);
             }
 #endif
 #ifdef USB_ITF_CCID
-            if (itf == ITF_CCID || itf == ITF_WCID) {
-                driver_exec_finished_cont_ccid(itf, apdu.ne + 2, rdata_gr - apdu.ne - (usb_get_tx(itf) + 34));
+            if (itf == ITF_SC_CCID || itf == ITF_SC_WCID) {
+                driver_exec_finished_cont_ccid(itf, apdu.ne + 2, rdata_gr - apdu.ne - apdu.rdata);
             }
 #endif
 #else
-            driver_exec_finished_cont_emul(itf, (uint16_t)(apdu.ne + 2), (uint16_t)(rdata_gr - apdu.ne - (usb_get_tx(itf))));
+            driver_exec_finished_cont_emul(itf, (uint16_t)(apdu.ne + 2), (uint16_t)(rdata_gr - apdu.ne - apdu.rdata));
 #endif
             apdu.rlen -= (uint16_t)apdu.ne;
         }
@@ -179,7 +168,6 @@ uint16_t apdu_process(uint8_t itf, const uint8_t *buffer, uint16_t buffer_size) 
     else {
         apdu.sw = 0;
         apdu.rlen = 0;
-        apdu.rdata = usb_prepare_response(itf);
         rdata_gr = apdu.rdata;
         return 1;
     }
@@ -194,14 +182,13 @@ uint16_t set_res_sw(uint8_t sw1, uint8_t sw2) {
     return make_uint16_t(sw1, sw2);
 }
 
-#ifndef ENABLE_EMULATION
-void apdu_thread() {
+void apdu_thread(void) {
     card_init_core1();
     while (1) {
         uint32_t m = 0;
-#ifndef ENABLE_EMULATION
         queue_remove_blocking(&usb_to_card_q, &m);
-#endif
+        uint32_t flag = m + 1;
+        queue_add_blocking(&card_to_usb_q, &flag);
 
         if (m == EV_VERIFY_CMD_AVAILABLE || m == EV_MODIFY_CMD_AVAILABLE) {
             set_res_sw(0x6f, 0x00);
@@ -217,10 +204,8 @@ done:   ;
         apdu_finish();
 
         finished_data_size = apdu_next();
-        uint32_t flag = EV_EXEC_FINISHED;
-#ifndef ENABLE_EMULATION
+        flag = EV_EXEC_FINISHED;
         queue_add_blocking(&card_to_usb_q, &flag);
-#endif
 #ifdef ESP_PLATFORM
         vTaskDelay(pdMS_TO_TICKS(10));
 #endif
@@ -234,7 +219,6 @@ done:   ;
     vTaskDelete(NULL);
 #endif
 }
-#endif
 
 void apdu_finish() {
     apdu.rdata[apdu.rlen] = apdu.sw >> 8;

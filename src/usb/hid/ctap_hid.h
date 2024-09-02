@@ -18,20 +18,15 @@
 #ifndef _CTAP_HID_H_
 #define _CTAP_HID_H_
 
-#ifdef _MSC_VER  // Windows
-typedef unsigned char     uint8_t;
-typedef unsigned short    uint16_t;
-typedef unsigned int      uint32_t;
-typedef unsigned long int uint64_t;
-#else
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "usb.h"
 
 // Size of HID reports
 
@@ -45,6 +40,7 @@ extern "C" {
 #define TYPE_INIT               0x80    // Initial frame identifier
 #define TYPE_CONT               0x00    // Continuation frame identifier
 
+PACK(
 typedef struct {
     uint32_t cid;                      // Channel identifier
     union {
@@ -60,7 +56,7 @@ typedef struct {
             uint8_t data[HID_RPT_SIZE - 5]; // Data payload
         } cont;
     };
-} __attribute__((__packed__)) CTAPHID_FRAME;
+}) CTAPHID_FRAME;
 
 extern CTAPHID_FRAME *ctap_req, *ctap_resp;
 
@@ -118,10 +114,12 @@ extern CTAPHID_FRAME *ctap_req, *ctap_resp;
 #define CAPFLAG_WINK            0x01    // Device supports WINK command
 #define CAPFLAG_CBOR            0x04    // Device supports CBOR command
 
+PACK(
 typedef struct {
     uint8_t nonce[INIT_NONCE_SIZE];     // Client application nonce
-} __attribute__((__packed__)) CTAPHID_INIT_REQ;
+}) CTAPHID_INIT_REQ;
 
+PACK(
 typedef struct {
     uint8_t nonce[INIT_NONCE_SIZE];     // Client application nonce
     uint32_t cid;                       // Channel identifier
@@ -130,7 +128,7 @@ typedef struct {
     uint8_t versionMinor;               // Minor version number
     uint8_t versionBuild;               // Build version number
     uint8_t capFlags;                   // Capabilities flags
-} __attribute__((__packed__)) CTAPHID_INIT_RESP;
+}) CTAPHID_INIT_RESP;
 
 // CTAPHID_SYNC command defines
 
@@ -144,7 +142,8 @@ typedef struct {
 
 // Low-level error codes. Return as negatives.
 
-#define CTAP_MAX_PACKET_SIZE (64 - 7 + 128 * (64 - 5))
+#define CTAP_MAX_PACKET_SIZE    (64 - 7 + 128 * (64 - 5))
+#define CTAP_MAX_CBOR_PAYLOAD   (USB_BUFFER_SIZE - 64 - 7 - 1)
 
 #define CTAP1_ERR_NONE                0x00    // No error
 #define CTAP1_ERR_INVALID_CMD         0x01    // Invalid command
@@ -161,13 +160,6 @@ extern void add_keyboard_buffer(const uint8_t *, size_t, bool);
 extern void append_keyboard_buffer(const uint8_t *data, size_t data_len);
 
 extern bool is_nitrokey;
-
-typedef enum {
-    WRITE_UNKNOWN = 0,
-    WRITE_PENDING,
-    WRITE_FAILED,
-    WRITE_SUCCESS,
-} write_status_t;
 
 #ifdef __cplusplus
 }

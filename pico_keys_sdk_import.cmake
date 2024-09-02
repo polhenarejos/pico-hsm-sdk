@@ -180,7 +180,7 @@ set(INCLUDES ${INCLUDES}
     ${CMAKE_CURRENT_LIST_DIR}/mbedtls/include
 )
 
-if(USB_ITF_HID OR ENABLE_EMULATION)
+if(USB_ITF_HID)
     set(MBEDTLS_SOURCES ${MBEDTLS_SOURCES}
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write_crt.c
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509_create.c
@@ -207,7 +207,6 @@ set(LIBRARIES
     hardware_sync
     hardware_adc
     pico_unique_id
-    hardware_rtc
     tinyusb_device
     tinyusb_board
     hardware_pio
@@ -233,6 +232,7 @@ endif()
 if (ENABLE_EMULATION)
     if(APPLE)
         set(CMAKE_OSX_SYSROOT "/Library/Developer/CommandLineTools//SDKs/MacOSX11.3.sdk")
+        add_definitions("-Wno-deprecated-declarations")
     elseif(MSVC)
         set(SOURCES ${SOURCES}
             ${CMAKE_CURRENT_LIST_DIR}/src/fs/mman.c
@@ -243,19 +243,13 @@ if (ENABLE_EMULATION)
         ${CMAKE_CURRENT_LIST_DIR}/src/usb/emulation/emulation.c
     )
     set(MBEDTLS_SOURCES ${MBEDTLS_SOURCES}
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/ctr_drbg.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/entropy.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/entropy_poll.c
         ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/aesni.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/pem.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/library/x509write.c
-        ${CMAKE_CURRENT_LIST_DIR}/mbedtls/tf-psa-crypto/drivers/builtin/src/base64.c
     )
     set(INCLUDES ${INCLUDES}
         ${CMAKE_CURRENT_LIST_DIR}/src/usb/emulation
     )
 else()
-    if (${USB_ITF_CCID})
+    if (USB_ITF_CCID)
         set(SOURCES ${SOURCES}
             ${CMAKE_CURRENT_LIST_DIR}/src/usb/ccid/ccid.c
         )
@@ -263,7 +257,6 @@ else()
             ${CMAKE_CURRENT_LIST_DIR}/src/usb/ccid
         )
     endif()
-
     set(SOURCES ${SOURCES}
         ${CMAKE_CURRENT_LIST_DIR}/src/usb/usb_descriptors.c
     )
@@ -273,14 +266,11 @@ if(NOT ESP_PLATFORM)
     set(EXTERNAL_SOURCES ${EXTERNAL_SOURCES} ${MBEDTLS_SOURCES})
 endif()
 if (MSVC)
-    target_compile_options(pico_hsm PUBLIC
-        -wd4820
-        -wd4255
-        -wd5045
-        -wd4706
-        -wd4061
-        -wd5105
-    )
+set(
+  CMAKE_C_FLAGS
+  "${CMAKE_C_FLAGS} -wd4820 -wd4255 -wd5045 -wd4706 -wd4061 -wd5105"
+)
+
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS
         __STDC_WANT_SECURE_LIB__=0
         _WIN32_WINNT_WIN10_TH2=0
@@ -297,6 +287,10 @@ if (MSVC)
         COMPILE_FLAGS " -W3 -wd4242 -wd4065"
     )
 endif()
+if (PICO_RP2350)
+pico_set_uf2_family(${CMAKE_PROJECT_NAME} "rp2350-arm-s")
+pico_embed_pt_in_binary(${CMAKE_PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/config/rp2350/pt.json")
+endif()
 set(INTERNAL_SOURCES ${SOURCES})
 set(SOURCES ${SOURCES} ${EXTERNAL_SOURCES})
 if (NOT TARGET pico_keys_sdk)
@@ -304,6 +298,8 @@ if (NOT TARGET pico_keys_sdk)
         add_impl_library(pico_keys_sdk)
     else()
         pico_add_library(pico_keys_sdk)
+
+        pico_add_extra_outputs(${CMAKE_PROJECT_NAME})
     endif()
     target_sources(pico_keys_sdk INTERFACE
         ${SOURCES}

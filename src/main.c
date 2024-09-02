@@ -27,13 +27,25 @@
 #include "emulation.h"
 #elif defined(ESP_PLATFORM)
 #include "tusb.h"
+#include "driver/gpio.h"
+#include "rom/gpio.h"
+#include "tinyusb.h"
+#include "esp_efuse.h"
+#define BOOT_PIN GPIO_NUM_0
 #else
 #include "pico/stdlib.h"
+#include "bsp/board.h"
+#include "pico/aon_timer.h"
+#include "hardware/gpio.h"
+#include "hardware/sync.h"
+#include "hardware/structs/ioqspi.h"
+#include "hardware/structs/sio.h"
 #endif
 
 #include "random.h"
 #include "pico_keys.h"
 #include "apdu.h"
+#include "usb.h"
 #ifdef CYW43_WL_GPIO_LED_PIN
 #include "pico/cyw43_arch.h"
 #endif
@@ -85,15 +97,6 @@ static inline void ws2812_program_init(PIO pio,
 }
 #endif
 
-#if defined(ENABLE_EMULATION)
-#else
-#include "usb.h"
-#ifndef ESP_PLATFORM
-#include "hardware/rtc.h"
-#include "bsp/board.h"
-#endif
-#endif
-
 extern void do_flash();
 extern void low_flash_init();
 
@@ -104,7 +107,7 @@ app_t *current_app = NULL;
 
 const uint8_t *ccid_atr = NULL;
 
-int register_app(int (*select_aid)(app_t *), const uint8_t *aid) {
+int register_app(int (*select_aid)(app_t *, uint8_t), const uint8_t *aid) {
     if (num_apps < sizeof(apps) / sizeof(app_t)) {
         apps[num_apps].select_aid = select_aid;
         apps[num_apps].aid = aid;
@@ -114,25 +117,37 @@ int register_app(int (*select_aid)(app_t *), const uint8_t *aid) {
     return 0;
 }
 
+int select_app(const uint8_t *aid, size_t aid_len) {
+    if (current_app && current_app->aid && (current_app->aid + 1 == aid || !memcmp(current_app->aid + 1, aid, aid_len))) {
+        current_app->select_aid(current_app, 0);
+        return CCID_OK;
+    }
+    for (int a = 0; a < num_apps; a++) {
+        if (!memcmp(apps[a].aid + 1, aid, MIN(aid_len, apps[a].aid[0]))) {
+            if (current_app) {
+                if (current_app->aid && !memcmp(current_app->aid + 1, aid, aid_len)) {
+                    current_app->select_aid(current_app, 1);
+                    return CCID_OK;
+                }
+                if (current_app->unload) {
+                    current_app->unload();
+                }
+            }
+            current_app = &apps[a];
+            if (current_app->select_aid(current_app, 1) == CCID_OK) {
+                return CCID_OK;
+            }
+        }
+    }
+    return CCID_ERR_FILE_NOT_FOUND;
+}
+
 int (*button_pressed_cb)(uint8_t) = NULL;
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_set_blink(uint32_t mode) {
     blink_interval_ms = mode;
-}
-
-uint32_t timeout = 0;
-void timeout_stop() {
-    timeout = 0;
-}
-
-void timeout_start() {
-    timeout = board_millis();
-}
-
-bool is_busy() {
-    return timeout > 0;
 }
 
 void execute_tasks();
@@ -184,8 +199,48 @@ uint32_t board_millis() {
 
 #else
 #ifdef ESP_PLATFORM
-bool board_button_read() {
-    return true;
+bool picok_board_button_read() {
+    int boot_state = gpio_get_level(BOOT_PIN);
+    return boot_state == 0;
+}
+#else
+bool __no_inline_not_in_flash_func(picok_get_bootsel_button)() {
+    const uint CS_PIN_INDEX = 1;
+
+    // Must disable interrupts, as interrupt handlers may be in flash, and we
+    // are about to temporarily disable flash access!
+    uint32_t flags = save_and_disable_interrupts();
+
+    // Set chip select to Hi-Z
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+    // Note we can't call into any sleep functions in flash right now
+    for (volatile int i = 0; i < 1000; ++i);
+
+    // The HI GPIO registers in SIO can observe and control the 6 QSPI pins.
+    // Note the button pulls the pin *low* when pressed.
+#if PICO_RP2040
+    #define CS_BIT (1u << 1)
+#else
+    #define CS_BIT SIO_GPIO_HI_IN_QSPI_CSN_BITS
+#endif
+    bool button_state = !(sio_hw->gpio_hi_in & CS_BIT);
+
+    // Need to restore the state of chip select, else we are going to have a
+    // bad time when we return to code in flash!
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_NORMAL << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+    restore_interrupts(flags);
+
+    return button_state;
+}
+uint32_t picok_board_button_read(void)
+{
+  return picok_get_bootsel_button();
 }
 #endif
 bool button_pressed_state = false;
@@ -197,7 +252,7 @@ bool wait_button() {
     cancel_button = false;
     led_set_blink((1000 << 16) | 100);
     req_button_pending = true;
-    while (board_button_read() == false && cancel_button == false) {
+    while (picok_board_button_read() == false && cancel_button == false) {
         execute_tasks();
         //sleep_ms(10);
         if (start_button + button_timeout < board_millis()) { /* timeout */
@@ -206,7 +261,7 @@ bool wait_button() {
         }
     }
     if (!timeout) {
-        while (board_button_read() == true && cancel_button == false) {
+        while (picok_board_button_read() == true && cancel_button == false) {
             execute_tasks();
             //sleep_ms(10);
             if (start_button + 15000 < board_millis()) { /* timeout */
@@ -271,7 +326,7 @@ void led_blinking_task() {
     }
 #elif defined(CYW43_WL_GPIO_LED_PIN)
     cyw43_arch_gpio_put(led_color, led_state);
-#elif ESP_PLATFORM
+#elif defined(ESP_PLATFORM)
     neopixel_SetPixel(neopixel, &pixel[led_state], 1);
 #endif
     led_state ^= 1; // toggle
@@ -299,20 +354,10 @@ void led_off_all() {
 }
 
 void init_rtc() {
-#if defined(ENABLE_EMULATION)
-#elif defined(ESP_PLATFORM)
-#else
-    rtc_init();
-    datetime_t dt = {
-        .year  = 2020,
-        .month = 1,
-        .day   = 1,
-        .dotw  = 3,     // 0 is Sunday, so 5 is Friday
-        .hour  = 00,
-        .min   = 00,
-        .sec   = 00
-    };
-    rtc_set_datetime(&dt);
+#ifdef PICO_PLATFORM
+    struct timespec tv = {0};
+    tv.tv_sec = 1577836800; // 2020-01-01
+    aon_timer_start(&tv);
 #endif
 }
 
@@ -320,10 +365,10 @@ extern void neug_task();
 extern void usb_task();
 void execute_tasks()
 {
-    usb_task();
 #if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
     tud_task(); // tinyusb device task
 #endif
+    usb_task();
     led_blinking_task();
 }
 
@@ -333,8 +378,8 @@ void core0_loop() {
         neug_task();
         do_flash();
 #ifndef ENABLE_EMULATION
-        if (board_millis() > 1000 && !is_busy()) { // wait 1 second to boot up
-            bool current_button_state = board_button_read();
+        if (button_pressed_cb && board_millis() > 1000 && !is_busy()) { // wait 1 second to boot up
+            bool current_button_state = picok_board_button_read();
             if (current_button_state != button_pressed_state) {
                 if (current_button_state == false) { // unpressed
                     if (button_pressed_time == 0 || button_pressed_time + 1000 > board_millis()) {
@@ -361,8 +406,6 @@ void core0_loop() {
 char pico_serial_str[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
 pico_unique_board_id_t pico_serial;
 #ifdef ESP_PLATFORM
-#include "tinyusb.h"
-#include "esp_efuse.h"
 #define pico_get_unique_board_id(a) do { uint32_t value; esp_efuse_read_block(EFUSE_BLK1, &value, 0, 32); memcpy((uint8_t *)(a), &value, sizeof(uint32_t)); esp_efuse_read_block(EFUSE_BLK1, &value, 32, 32); memcpy((uint8_t *)(a)+4, &value, sizeof(uint32_t)); } while(0)
 extern tinyusb_config_t tusb_cfg;
 extern bool enable_wcid;
@@ -415,9 +458,13 @@ int main(void) {
 
     init_rtc();
 
-#ifndef ENABLE_EMULATION
     usb_init();
+#ifndef ENABLE_EMULATION
 #ifdef ESP_PLATFORM
+    gpio_pad_select_gpio(BOOT_PIN);
+    gpio_set_direction(BOOT_PIN, GPIO_MODE_INPUT);
+    gpio_pulldown_dis(BOOT_PIN);
+
     tusb_cfg.string_descriptor[3] = pico_serial_str;
     if (enable_wcid) {
         tusb_cfg.configuration_descriptor = desc_config;
@@ -428,11 +475,10 @@ int main(void) {
 #endif
 #endif
 
-    //ccid_prepare_receive(&ccid);
 #ifdef ESP_PLATFORM
     uint8_t gpio = GPIO_NUM_48;
     if (file_has_data(ef_phy)) {
-        if (file_read_uint8_offset(ef_phy, PHY_OPTS + 1) & PHY_OPT_GPIO) {
+        if (file_read_uint8_offset(ef_phy, PHY_OPTS) & PHY_OPT_GPIO) {
             gpio = file_get_data(ef_phy)[PHY_LED_GPIO];
         }
     }
@@ -440,7 +486,7 @@ int main(void) {
 #endif
 
 #ifdef ESP_PLATFORM
-    xTaskCreate(core0_loop, "core0", 4096*5, NULL, CONFIG_TINYUSB_TASK_PRIORITY + 1, &hcore0);
+    xTaskCreatePinnedToCore(core0_loop, "core0", 4096*5, NULL, CONFIG_TINYUSB_TASK_PRIORITY - 1, &hcore0, 0);
 #else
     core0_loop();
 #endif
