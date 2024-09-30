@@ -15,19 +15,22 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _NEUG_H_
-#define _NEUG_H_
+#ifndef _SHA256_ALT_H_
+#define _SHA256_ALT_H_
 
-#define NEUG_PRE_LOOP 32
+#include "pico_keys.h"
+#include "pico/sha256.h"
 
-#include <stdlib.h>
-#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
-#include "pico/stdlib.h"
+typedef struct mbedtls_sha256_context {
+    pico_sha256_state_t MBEDTLS_PRIVATE(pico_state);
+#if defined(MBEDTLS_SHA224_C)
+    unsigned char MBEDTLS_PRIVATE(buffer)[64];   /*!< The data block being processed. */
+    uint32_t MBEDTLS_PRIVATE(total)[2];          /*!< The number of Bytes processed.  */
+    uint32_t MBEDTLS_PRIVATE(state)[8];          /*!< The intermediate digest state.  */
+    int MBEDTLS_PRIVATE(is224);                  /*!< Determines which function to use:
+                                                    0: Use SHA-256, or 1: Use SHA-224. */
 #endif
+}
+mbedtls_sha256_context;
 
-void neug_init(uint32_t *buf, uint8_t size);
-uint32_t neug_get();
-void neug_flush(void);
-void neug_wait_full();
-
-#endif
+#endif /* _SHA256_ALT_H_ */

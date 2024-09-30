@@ -15,19 +15,18 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _NEUG_H_
-#define _NEUG_H_
+#include "pico_keys.h"
 
-#define NEUG_PRE_LOOP 32
+#if defined(PICO_DEFAULT_LED_PIN) && !defined(PICO_DEFAULT_WS2812_PIN)
 
-#include <stdlib.h>
-#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
-#include "pico/stdlib.h"
-#endif
+void led_driver_init() {
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+}
 
-void neug_init(uint32_t *buf, uint8_t size);
-uint32_t neug_get();
-void neug_flush(void);
-void neug_wait_full();
+void led_driver_color(uint8_t color, uint32_t led_brightness, float progress) {
+    (void)led_brightness;
+    gpio_put(PICO_DEFAULT_LED_PIN, progress >= 0.5);
+}
 
 #endif

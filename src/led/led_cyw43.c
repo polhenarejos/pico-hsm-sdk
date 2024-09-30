@@ -15,19 +15,19 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _NEUG_H_
-#define _NEUG_H_
+#include "pico_keys.h"
 
-#define NEUG_PRE_LOOP 32
+#ifdef CYW43_WL_GPIO_LED_PIN
 
-#include <stdlib.h>
-#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
-#include "pico/stdlib.h"
-#endif
+#include "pico/cyw43_arch.h"
 
-void neug_init(uint32_t *buf, uint8_t size);
-uint32_t neug_get();
-void neug_flush(void);
-void neug_wait_full();
+void led_driver_init() {
+    cyw43_arch_init();
+}
+
+void led_driver_color(uint8_t color, uint32_t led_brightness, float progress) {
+    (void)led_brightness;
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, progress >= 0.5);
+}
 
 #endif

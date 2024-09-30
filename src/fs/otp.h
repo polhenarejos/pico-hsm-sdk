@@ -15,19 +15,24 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _NEUG_H_
-#define _NEUG_H_
 
-#define NEUG_PRE_LOOP 32
+#ifndef _OTP_H_
+#define _OTP_H_
 
-#include <stdlib.h>
-#if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
-#include "pico/stdlib.h"
+#ifdef PICO_RP2350
+
+#define OTP_TEST_ROW 0xEF0
+
+#define OTP_KEY_1    OTP_TEST_ROW
+
+#elif defined(ESP_PLATFORM)
+
+#include "esp_efuse.h"
+
+#define OTP_KEY_1    EFUSE_BLK_KEY3
+
 #endif
 
-void neug_init(uint32_t *buf, uint8_t size);
-uint32_t neug_get();
-void neug_flush(void);
-void neug_wait_full();
+extern const uint8_t *otp_key_1;
 
-#endif
+#endif // _OTP_H_
