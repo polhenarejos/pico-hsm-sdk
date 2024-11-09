@@ -21,18 +21,31 @@
 
 #ifdef PICO_RP2350
 
-#define OTP_TEST_ROW 0xEF0
+#define OTP_MKEK_ROW 0xEF0
+#define OTP_DEVK_ROW 0xED0
 
-#define OTP_KEY_1    OTP_TEST_ROW
+#define OTP_KEY_1    OTP_MKEK_ROW
+#define OTP_KEY_2    OTP_DEVK_ROW
+
+extern uint8_t* otp_buffer(uint16_t row);
+extern uint8_t* otp_buffer_raw(uint16_t row);
+extern bool is_empty_otp_buffer(uint16_t row, uint16_t len);
+extern int otp_write_data(uint16_t row, uint8_t *data, uint16_t len);
+extern int otp_write_data_raw(uint16_t row, uint8_t *data, uint16_t len);
 
 #elif defined(ESP_PLATFORM)
 
 #include "esp_efuse.h"
 
 #define OTP_KEY_1    EFUSE_BLK_KEY3
+#define OTP_KEY_2    EFUSE_BLK_KEY4
 
 #endif
 
+extern int otp_enable_secure_boot(uint8_t bootkey, bool secure_lock);
+extern void init_otp_files();
+
 extern const uint8_t *otp_key_1;
+extern const uint8_t *otp_key_2;
 
 #endif // _OTP_H_
