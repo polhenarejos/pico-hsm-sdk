@@ -99,7 +99,6 @@ bool is_req_button_pending() {
     return req_button_pending;
 }
 
-uint32_t button_timeout = 15000;
 bool cancel_button = false;
 
 #ifdef ENABLE_EMULATION
@@ -182,6 +181,13 @@ bool button_pressed_state = false;
 uint32_t button_pressed_time = 0;
 uint8_t button_press = 0;
 bool wait_button() {
+    uint32_t button_timeout = 15000;
+    if (phy_data.up_btn_present) {
+        button_timeout = phy_data.up_btn * 1000;
+        if (button_timeout == 0) {
+            return false;
+        }
+    }
     uint32_t start_button = board_millis();
     bool timeout = false;
     cancel_button = false;
@@ -317,6 +323,16 @@ int main(void) {
     gpio_pulldown_dis(BOOT_PIN);
 
     tusb_cfg.string_descriptor[3] = pico_serial_str;
+    if (phy_data.usb_product_present) {
+        tusb_cfg.string_descriptor[2] = phy_data.usb_product;
+    }
+    static char tmps[4][32];
+    for (int i = 4; i < tusb_cfg.string_descriptor_count; i++) {
+        strlcpy(tmps[i-4], tusb_cfg.string_descriptor[2], sizeof(tmps[0]));
+        strlcat(tmps[i-4], " ", sizeof(tmps[0]));
+        strlcat(tmps[i-4], tusb_cfg.string_descriptor[i], sizeof(tmps[0]));
+        tusb_cfg.string_descriptor[i] = tmps[i-4];
+    }
     tusb_cfg.configuration_descriptor = desc_config;
 
     tinyusb_driver_install(&tusb_cfg);
@@ -326,7 +342,7 @@ int main(void) {
 #endif
 
 #ifdef ESP_PLATFORM
-    xTaskCreatePinnedToCore(core0_loop, "core0", 4096*5, NULL, CONFIG_TINYUSB_TASK_PRIORITY - 1, &hcore0, 0);
+    xTaskCreatePinnedToCore(core0_loop, "core0", 4096*ITF_TOTAL*2, NULL, CONFIG_TINYUSB_TASK_PRIORITY - 1, &hcore0, 0);
 #else
     core0_loop();
 #endif

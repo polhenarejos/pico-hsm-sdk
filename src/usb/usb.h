@@ -76,6 +76,12 @@ enum {
     REPORT_ID_COUNT
 };
 
+#if defined(ESP_PLATFORM) && defined(USB_ITF_HID) && defined(USB_ITF_CCID)
+#define TUSB_SMARTCARD_CCID_EPS 2
+#else
+#define TUSB_SMARTCARD_CCID_EPS 3
+#endif
+
 extern void usb_task();
 extern queue_t usb_to_card_q;
 extern queue_t card_to_usb_q;
@@ -109,7 +115,7 @@ extern void driver_exec_finished_emul(uint8_t itf, uint16_t size_next);
 extern void driver_exec_finished_cont_emul(uint8_t itf, uint16_t size_next, uint16_t offset);
 #endif
 
-#define USB_BUFFER_SIZE         2048    // Size of USB buffer"
+#define USB_BUFFER_SIZE         2048
 
 PACK(
 typedef struct {

@@ -43,8 +43,18 @@ int phy_serialize_data(const phy_data_t *phy, uint8_t *data, uint16_t *len) {
         *p++ = phy->led_brightness;
     }
     *p++ = PHY_OPTS;
-    *p++ = phy->opts >> 8;
-    *p++ = phy->opts & 0xff;
+    p += put_uint16_t_be(phy->opts, p);
+    if (phy->up_btn_present) {
+        *p++ = PHY_UP_BTN;
+        *p++ = phy->up_btn;
+    }
+    if (phy->usb_product_present) {
+        *p++ = PHY_USB_PRODUCT;
+        strcpy((char *)p, phy->usb_product);
+        p += strlen(phy->usb_product);
+        *p++ = '\0';
+    }
+
     *len = p - data;
     return PICOKEY_OK;
 }
@@ -74,8 +84,18 @@ int phy_unserialize_data(const uint8_t *data, uint16_t len, phy_data_t *phy) {
                 phy->led_brightness_present = true;
                 break;
             case PHY_OPTS:
-                phy->opts = (*p << 8) | *(p + 1);
+                phy->opts = get_uint16_t_be(p);
                 p += 2;
+                break;
+            case PHY_UP_BTN:
+                phy->up_btn = *p++;
+                phy->up_btn_present = true;
+                break;
+            case PHY_USB_PRODUCT:
+                memset(phy->usb_product, 0, sizeof(phy->usb_product));
+                strlcpy(phy->usb_product, (const char *)p, sizeof(phy->usb_product));
+                phy->usb_product_present = true;
+                p += strlen(phy->usb_product) + 1;
                 break;
         }
     }

@@ -23,7 +23,7 @@
 #define XIP_BASE                0
 #define FLASH_SECTOR_SIZE       4096
 #ifdef ESP_PLATFORM
-#define PICO_FLASH_SIZE_BYTES   (1 * 1024 * 1024)
+uint32_t PICO_FLASH_SIZE_BYTES = (1 * 1024 * 1024);
 #else
 #define PICO_FLASH_SIZE_BYTES   (8 * 1024 * 1024)
 #endif
@@ -42,27 +42,12 @@
  * |                                                    |
  * ------------------------------------------------------
  */
-#ifdef ESP_PLATFORM
-#define FLASH_TARGET_OFFSET 0
-#else
-#define FLASH_TARGET_OFFSET (PICO_FLASH_SIZE_BYTES >> 1) // DATA starts at the mid of flash
-#endif
+
 #define FLASH_DATA_HEADER_SIZE (sizeof(uintptr_t) + sizeof(uint32_t))
 #define FLASH_PERMANENT_REGION (4 * FLASH_SECTOR_SIZE) // 4 sectors (16kb) of permanent memory
 
 //To avoid possible future allocations, data region starts at the end of flash and goes upwards to the center region
-
-#ifdef PICO_RP2350
-// Table partition for RP2350 needs 8kb
-const uintptr_t end_flash = (XIP_BASE + PICO_FLASH_SIZE_BYTES - 2 * FLASH_SECTOR_SIZE);
-#else
-const uintptr_t end_flash = (XIP_BASE + PICO_FLASH_SIZE_BYTES);
-#endif
-
-const uintptr_t end_rom_pool = end_flash - FLASH_DATA_HEADER_SIZE - 4; //This is a fixed value. DO NOT CHANGE
-const uintptr_t start_rom_pool = end_rom_pool - FLASH_PERMANENT_REGION; //This is a fixed value. DO NOT CHANGE
-const uintptr_t end_data_pool = start_rom_pool - FLASH_DATA_HEADER_SIZE;  //This is a fixed value. DO NOT CHANGE
-const uintptr_t start_data_pool = (XIP_BASE + FLASH_TARGET_OFFSET);
+uintptr_t end_flash, end_rom_pool, start_rom_pool, end_data_pool, start_data_pool;
 
 extern int flash_program_block(uintptr_t addr, const uint8_t *data, size_t len);
 extern int flash_program_halfword(uintptr_t addr, uint16_t data);
@@ -73,12 +58,24 @@ extern uint8_t *flash_read(uintptr_t addr);
 
 extern void low_flash_available();
 
+uintptr_t last_base;
+uint32_t num_files = 0;
+
+void flash_set_bounds(uintptr_t start, uintptr_t end) {
+    end_flash = end;
+    end_rom_pool = end_flash - FLASH_DATA_HEADER_SIZE - 4;
+    start_rom_pool = end_rom_pool - FLASH_PERMANENT_REGION;
+    end_data_pool = start_rom_pool - FLASH_DATA_HEADER_SIZE;
+    start_data_pool = start;
+
+    last_base = end_data_pool;
+}
+
 uintptr_t allocate_free_addr(uint16_t size, bool persistent) {
     if (size > FLASH_SECTOR_SIZE) {
         return 0x0; //ERROR
     }
-    size_t real_size = size + sizeof(uint16_t) + sizeof(uintptr_t) + sizeof(uint16_t) +
-                       sizeof(uintptr_t);                                                          //len+len size+next address+fid+prev_addr size
+    size_t real_size = size + sizeof(uint16_t) + sizeof(uintptr_t) + sizeof(uint16_t) + sizeof(uintptr_t); //len+len size+next address+fid+prev_addr size
     uintptr_t next_base = 0x0, endp = end_data_pool, startp = start_data_pool;
     if (persistent) {
         endp = end_rom_pool;
@@ -108,14 +105,9 @@ uintptr_t allocate_free_addr(uint16_t size, bool persistent) {
             return 0x0;
         }
         //we check if |base-(next_addr+size_next_addr)| > |base-potential_addr| only if fid != 1xxx (not size blocked)
-        else if (addr_alg <= potential_addr &&
-                 base -
-                 (next_base +
-                  flash_read_uint16(next_base + sizeof(uintptr_t) + sizeof(uintptr_t) +
-                                    sizeof(uint16_t)) +
-                  2 *
-                  sizeof(uint16_t) + 2 * sizeof(uintptr_t)) > base - potential_addr &&
-                 (flash_read_uint16(next_base + 2 * sizeof(uintptr_t)) & 0x1000) != 0x1000) {
+        else if (addr_alg <= potential_addr
+            && base - (next_base + flash_read_uint16(next_base + sizeof(uintptr_t) + sizeof(uintptr_t) + sizeof(uint16_t)) + 2 * sizeof(uint16_t) + 2 * sizeof(uintptr_t)) > base - potential_addr
+            && (flash_read_uint16(next_base + 2 * sizeof(uintptr_t)) & 0x1000) != 0x1000) {
             flash_program_uintptr(potential_addr, next_base);
             flash_program_uintptr(next_base + sizeof(uintptr_t), potential_addr);
             flash_program_uintptr(potential_addr + sizeof(uintptr_t), base);
@@ -130,8 +122,7 @@ int flash_clear_file(file_t *file) {
     if (file == NULL || file->data == NULL) {
         return PICOKEY_OK;
     }
-    uintptr_t base_addr =
-        (uintptr_t)(file->data - sizeof(uintptr_t) - sizeof(uint16_t) - sizeof(uintptr_t));
+    uintptr_t base_addr = (uintptr_t)(file->data - sizeof(uintptr_t) - sizeof(uint16_t) - sizeof(uintptr_t));
     uintptr_t prev_addr = flash_read_uintptr(base_addr + sizeof(uintptr_t));
     uintptr_t next_addr = flash_read_uintptr(base_addr);
     //printf("nc %lx->%lx   %lx->%lx\n",prev_addr,flash_read_uintptr(prev_addr),base_addr,next_addr);
@@ -143,12 +134,12 @@ int flash_clear_file(file_t *file) {
     flash_program_uintptr(base_addr, 0);
     flash_program_uintptr(base_addr + sizeof(uintptr_t), 0);
     file->data = NULL;
+    num_files--;
     //printf("na %lx->%lx\n",prev_addr,flash_read_uintptr(prev_addr));
     return PICOKEY_OK;
 }
 
-int flash_write_data_to_file_offset(file_t *file, const uint8_t *data, uint16_t len,
-                                    uint16_t offset) {
+int flash_write_data_to_file_offset(file_t *file, const uint8_t *data, uint16_t len, uint16_t offset) {
     if (!file) {
         return PICOKEY_ERR_NULL_PARAM;
     }
@@ -182,6 +173,9 @@ int flash_write_data_to_file_offset(file_t *file, const uint8_t *data, uint16_t 
     if (new_addr == 0x0) {
         return PICOKEY_ERR_NO_MEMORY;
     }
+    if (new_addr < last_base) {
+        last_base = new_addr;
+    }
     file->data = (uint8_t *) new_addr + sizeof(uintptr_t) + sizeof(uint16_t) + sizeof(uintptr_t); //next addr+fid+prev addr
     flash_program_halfword(new_addr + sizeof(uintptr_t) + sizeof(uintptr_t), file->fid);
     flash_program_halfword((uintptr_t) file->data, len);
@@ -191,8 +185,30 @@ int flash_write_data_to_file_offset(file_t *file, const uint8_t *data, uint16_t 
     if (old_data) {
         free(old_data);
     }
+    num_files++;
     return PICOKEY_OK;
 }
+
 int flash_write_data_to_file(file_t *file, const uint8_t *data, uint16_t len) {
     return flash_write_data_to_file_offset(file, data, len, 0);
+}
+
+uint32_t flash_free_space() {
+    return last_base - start_data_pool;
+}
+
+uint32_t flash_used_space() {
+    return end_data_pool - last_base;
+}
+
+uint32_t flash_total_space() {
+    return end_data_pool - start_data_pool;
+}
+
+uint32_t flash_num_files() {
+    return num_files;
+}
+
+uint32_t flash_size() {
+    return PICO_FLASH_SIZE_BYTES;
 }

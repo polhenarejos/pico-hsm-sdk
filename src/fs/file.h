@@ -69,15 +69,20 @@
 
 #define MAX_DEPTH 4
 
+#define MAX_DYNAMIC_FILES 256
+
 typedef struct file {
-    const uint16_t fid;
-    const uint8_t parent; //entry number in the whole table!!
     const uint8_t *name;
+    uint8_t *data;              //should include 2 bytes len at begining
+    const uint16_t fid;
+    const uint8_t acl[7];
+    const uint8_t parent;       //entry number in the whole table!!
     const uint8_t type;
     const uint8_t ef_structure;
-    uint8_t *data; //should include 2 bytes len at begining
-    const uint8_t acl[7];
-} file_t;
+#ifdef ENABLE_EMULATION
+    uint32_t _padding;
+#endif
+} __attribute__ ((packed)) file_t;
 
 extern bool file_has_data(file_t *);
 
@@ -127,6 +132,12 @@ extern uint16_t meta_find(uint16_t, uint8_t **out);
 extern int meta_delete(uint16_t fid);
 extern int meta_add(uint16_t fid, const uint8_t *data, uint16_t len);
 extern int delete_file(file_t *ef);
+
+extern uint32_t flash_free_space();
+extern uint32_t flash_used_space();
+extern uint32_t flash_total_space();
+extern uint32_t flash_num_files();
+extern uint32_t flash_size();
 
 #ifndef ENABLE_EMULATION
 extern file_t *ef_phy;

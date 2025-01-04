@@ -56,13 +56,11 @@ void process_fci(const file_t *pe, int fmd) {
     if (pe->data) {
         if ((pe->type & FILE_DATA_FUNC) == FILE_DATA_FUNC) {
             uint16_t len = (uint16_t)((int (*)(const file_t *, int))(pe->data))(pe, 0);
-            res_APDU[res_APDU_size++] = (len >> 8) & 0xff;
-            res_APDU[res_APDU_size++] = len & 0xff;
+            res_APDU_size += put_uint16_t_be(len, res_APDU + res_APDU_size);
         }
         else {
             uint16_t v = file_get_size(pe);
-            res_APDU[res_APDU_size++] = v >> 8;
-            res_APDU[res_APDU_size++] = v & 0xff;
+            res_APDU_size += put_uint16_t_be(v, res_APDU + res_APDU_size);
         }
     }
     else {
@@ -88,8 +86,7 @@ void process_fci(const file_t *pe, int fmd) {
 
     res_APDU[res_APDU_size++] = 0x83;
     res_APDU[res_APDU_size++] = 2;
-    put_uint16_t(pe->fid, res_APDU + res_APDU_size);
-    res_APDU_size += 2;
+    res_APDU_size += put_uint16_t_be(pe->fid, res_APDU + res_APDU_size);
     if (pe->name) {
         res_APDU[res_APDU_size++] = 0x84;
         res_APDU[res_APDU_size++] = MIN(pe->name[0], 16);
@@ -113,7 +110,6 @@ void process_fci(const file_t *pe, int fmd) {
     }
 }
 
-#define MAX_DYNAMIC_FILES 128
 uint16_t dynamic_files = 0;
 file_t dynamic_file[MAX_DYNAMIC_FILES];
 
@@ -177,13 +173,13 @@ uint8_t make_path_buf(const file_t *pe, uint8_t *buf, uint8_t buflen, const file
     if (pe == top) { //MF or relative DF
         return 0;
     }
-    put_uint16_t(pe->fid, buf);
+    put_uint16_t_be(pe->fid, buf);
     return make_path_buf(&file_entries[pe->parent], buf + 2, buflen - 2, top) + 2;
 }
 
 uint8_t make_path(const file_t *pe, const file_t *top, uint8_t *path) {
     uint8_t buf[MAX_DEPTH * 2], *p = path;
-    put_uint16_t(pe->fid, buf);
+    put_uint16_t_be(pe->fid, buf);
     uint8_t depth = make_path_buf(&file_entries[pe->parent], buf + 2, sizeof(buf) - 2, top) + 2;
     for (int d = depth - 2; d >= 0; d -= 2) {
         memcpy(p, buf + d, 2);
@@ -245,11 +241,18 @@ void initialize_flash(bool hard) {
     dynamic_files = 0;
 }
 
-void scan_region(bool persistent) {
+extern uintptr_t last_base;
+extern uint32_t num_files;
+void scan_region(bool persistent)
+{
     uintptr_t endp = end_data_pool, startp = start_data_pool;
     if (persistent) {
         endp = end_rom_pool;
         startp = start_rom_pool;
+    }
+    else {
+        last_base = endp;
+        num_files = 0;
     }
     for (uintptr_t base = flash_read_uintptr(endp); base >= startp; base = flash_read_uintptr(base)) {
         if (base == 0x0) { //all is empty
@@ -257,17 +260,21 @@ void scan_region(bool persistent) {
         }
 
         uint16_t fid = flash_read_uint16(base + sizeof(uintptr_t) + sizeof(uintptr_t));
-        printf("[%x] scan fid %x, len %d\n", (unsigned int) base, fid,
-               flash_read_uint16(base + sizeof(uintptr_t) + sizeof(uintptr_t) + sizeof(uint16_t)));
+        printf("[%x] scan fid %x, len %d\n", (unsigned int) base, fid, flash_read_uint16(base + sizeof(uintptr_t) + sizeof(uintptr_t) + sizeof(uint16_t)));
         file_t *file = (file_t *) search_by_fid(fid, NULL, SPECIFY_EF);
         if (!file) {
             file = file_new(fid);
         }
         if (file) {
-            file->data =
-                (uint8_t *) (base + sizeof(uintptr_t) + sizeof(uintptr_t) + sizeof(uint16_t));
+            file->data = (uint8_t *) (base + sizeof(uintptr_t) + sizeof(uintptr_t) + sizeof(uint16_t));
+        }
+        if (!persistent) {
+            num_files++;
         }
         if (flash_read_uintptr(base) == 0x0) {
+            if (base < last_base) {
+                last_base = base;
+            }
             break;
         }
     }
@@ -383,7 +390,7 @@ uint16_t meta_find(uint16_t fid, uint8_t **out) {
         if (tag_len < 2) {
             continue;
         }
-        uint16_t cfid = (tag_data[0] << 8 | tag_data[1]);
+        uint16_t cfid = get_uint16_t_be(tag_data);
         if (cfid == fid) {
             if (out) {
                 *out = tag_data + 2;
@@ -409,7 +416,7 @@ int meta_delete(uint16_t fid) {
         if (tag_len < 2) {
             continue;
         }
-        uint16_t cfid = (tag_data[0] << 8 | tag_data[1]);
+        uint16_t cfid = get_uint16_t_be(tag_data);
         if (cfid == fid) {
             uint16_t new_len = ctxi.len - 1 - tag_len - format_tlv_len(tag_len, NULL);
             if (new_len == 0) {
@@ -453,7 +460,7 @@ int meta_add(uint16_t fid, const uint8_t *data, uint16_t len) {
         if (tag_len < 2) {
             continue;
         }
-        uint16_t cfid = (tag_data[0] << 8 | tag_data[1]);
+        uint16_t cfid = get_uint16_t_be(tag_data);
         if (cfid == fid) {
             if (tag_len - 2 == len) { //an update
                 memcpy(p - tag_len + 2, data, len);
@@ -483,8 +490,7 @@ int meta_add(uint16_t fid, const uint8_t *data, uint16_t len) {
                 uint8_t *f = fdata + meta_offset;
                 *f++ = fid & 0xff;
                 f += format_tlv_len(len + 2, f);
-                *f++ = fid >> 8;
-                *f++ = fid & 0xff;
+                f += put_uint16_t_be(fid, f);
                 memcpy(f, data, len);
                 r = file_put_data(ef, fdata, ef_size);
                 free(fdata);
@@ -499,8 +505,7 @@ int meta_add(uint16_t fid, const uint8_t *data, uint16_t len) {
     uint8_t *f = fdata + ef_size;
     *f++ = fid & 0x1f;
     f += format_tlv_len(len + 2, f);
-    *f++ = fid >> 8;
-    *f++ = fid & 0xff;
+    f += put_uint16_t_be(fid, f);
     memcpy(f, data, len);
     r = file_put_data(ef, fdata, ef_size + (uint16_t)asn1_len_tag(fid & 0x1f, len + 2));
     free(fdata);

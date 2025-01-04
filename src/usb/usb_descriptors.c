@@ -76,7 +76,8 @@ uint8_t const *tud_descriptor_device_cb(void) {
 #define TUD_INTERFACE_DESC_LEN 9
 #define TUD_ENDPOINT_DESC_LEN 7
 #define TUSB_SMARTCARD_LEN 54
-#define TUSB_SMARTCARD_CCID_DESC_LEN (TUD_INTERFACE_DESC_LEN + TUSB_SMARTCARD_LEN + 3 * TUD_ENDPOINT_DESC_LEN)
+
+#define TUSB_SMARTCARD_CCID_DESC_LEN (TUD_INTERFACE_DESC_LEN + TUSB_SMARTCARD_LEN + TUSB_SMARTCARD_CCID_EPS * TUD_ENDPOINT_DESC_LEN)
 #define TUSB_SMARTCARD_WCID_DESC_LEN (TUD_INTERFACE_DESC_LEN + TUSB_SMARTCARD_LEN + 2 * TUD_ENDPOINT_DESC_LEN)
 
 enum {
@@ -104,15 +105,22 @@ uint8_t const desc_hid_report_kb[] = {
 #ifdef USB_ITF_CCID
 #define TUD_SMARTCARD_DESCRIPTOR_WEB(_itf, _strix, _epout, _epin, _epsize) \
     9, TUSB_DESC_INTERFACE, _itf, 0, 2, 0xFF, 0, 0, _strix, \
-    54, 0x21, U16_TO_U8S_LE(0x0110), 0, 0x1, U32_TO_U8S_LE(0x01|0x2), U32_TO_U8S_LE(0xDFC), U32_TO_U8S_LE(0xDFC), 0, U32_TO_U8S_LE(0x2580), U32_TO_U8S_LE(0x2580), 0, U32_TO_U8S_LE(0xFE), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0x40840), U32_TO_U8S_LE(65544+10), 0xFF, 0xFF, U16_TO_U8S_LE(0x0), 0, 0x1, \
+    54, 0x21, U16_TO_U8S_LE(0x0110), 0, 0x1, U32_TO_U8S_LE(0x01|0x2), U32_TO_U8S_LE(0xDFC), U32_TO_U8S_LE(0xDFC), 0, U32_TO_U8S_LE(0x2580), U32_TO_U8S_LE(0x2580), 0, U32_TO_U8S_LE(0xFE), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0x40840), U32_TO_U8S_LE(USB_BUFFER_SIZE), 0xFF, 0xFF, U16_TO_U8S_LE(0x0), 0, 0x1, \
     7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0, \
     7, TUSB_DESC_ENDPOINT, _epin,  TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0
-#define TUD_SMARTCARD_DESCRIPTOR(_itf, _strix, _epout, _epin, _epint, _epsize) \
-    9, TUSB_DESC_INTERFACE, _itf, 0, 3, TUSB_CLASS_SMART_CARD, 0, 0, _strix, \
-    54, 0x21, U16_TO_U8S_LE(0x0110), 0, 0x1, U32_TO_U8S_LE(0x01|0x2), U32_TO_U8S_LE(0xDFC), U32_TO_U8S_LE(0xDFC), 0, U32_TO_U8S_LE(0x2580), U32_TO_U8S_LE(0x2580), 0, U32_TO_U8S_LE(0xFE), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0x40840), U32_TO_U8S_LE(65544+10), 0xFF, 0xFF, U16_TO_U8S_LE(0x0), 0, 0x1, \
+#define TUD_SMARTCARD_DESCRIPTOR_2EP(_itf, _strix, _epout, _epin, _epsize) \
+    9, TUSB_DESC_INTERFACE, _itf, 0, TUSB_SMARTCARD_CCID_EPS, TUSB_CLASS_SMART_CARD, 0, 0, _strix, \
+    54, 0x21, U16_TO_U8S_LE(0x0110), 0, 0x1, U32_TO_U8S_LE(0x01|0x2), U32_TO_U8S_LE(0xDFC), U32_TO_U8S_LE(0xDFC), 0, U32_TO_U8S_LE(0x2580), U32_TO_U8S_LE(0x2580), 0, U32_TO_U8S_LE(0xFE), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0), U32_TO_U8S_LE(0x40840), U32_TO_U8S_LE(USB_BUFFER_SIZE), 0xFF, 0xFF, U16_TO_U8S_LE(0x0), 0, 0x1, \
     7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0, \
-    7, TUSB_DESC_ENDPOINT, _epin,  TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0, \
+    7, TUSB_DESC_ENDPOINT, _epin,  TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0
+#if TUSB_SMARTCARD_CCID_EPS == 3
+#define TUD_SMARTCARD_DESCRIPTOR(_itf, _strix, _epout, _epin, _epint, _epsize) \
+    TUD_SMARTCARD_DESCRIPTOR_2EP(_itf, _strix, _epout, _epin, _epsize), \
     7, TUSB_DESC_ENDPOINT, _epint,  TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(_epsize), 0
+#else
+#define TUD_SMARTCARD_DESCRIPTOR(_itf, _strix, _epout, _epin, _epint, _epsize) \
+    TUD_SMARTCARD_DESCRIPTOR_2EP(_itf, _strix, _epout, _epin, _epsize)
+#endif
 #endif
 
 const uint8_t desc_config[] = {
@@ -258,14 +266,14 @@ char const *string_desc_arr [] = {
     "Pol Henarejos",                     // 1: Manufacturer
     "Pico Key",                       // 2: Product
     "11223344",                      // 3: Serials, should use chip ID
-    "Pico Key Config"               // 4: Vendor Interface
+    "Config"               // 4: Vendor Interface
 #ifdef USB_ITF_HID
-    , "Pico Key HID Interface"
-    , "Pico Key HID Keyboard Interface"
+    , "HID Interface"
+    , "HID Keyboard Interface"
 #endif
 #ifdef USB_ITF_CCID
-    , "Pico Key CCID Interface"
-    , "Pico Key WebCCID Interface"
+    , "CCID OTP FIDO Interface"
+    , "WebCCID Interface"
 #endif
 };
 
@@ -273,7 +281,7 @@ char const *string_desc_arr [] = {
 tinyusb_config_t tusb_cfg = {
     .device_descriptor = &desc_device,
     .string_descriptor = string_desc_arr,
-    .string_descriptor_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]),
+    .string_descriptor_count = (sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) > 8 ? 8 : (sizeof(string_desc_arr) / sizeof(string_desc_arr[0])),
     .external_phy = false,
     .configuration_descriptor = desc_config,
 };
@@ -283,7 +291,7 @@ static uint16_t _desc_str[32];
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void) langid;
 
-    uint8_t chr_count;
+    uint8_t chr_count = 0;
 
     if (index == 0) {
         memcpy(&_desc_str[1], string_desc_arr[0], 2);
@@ -301,15 +309,27 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         if (index == 3) {
             str = pico_serial_str;
         }
-
-        chr_count = strlen(str);
-        if (chr_count > 31) {
-            chr_count = 31;
+        else if (index == 2) {
+            if (phy_data.usb_product_present) {
+                str = phy_data.usb_product;
+            }
         }
 
-        // Convert ASCII string into UTF-16
-        for (uint8_t i = 0; i < chr_count; i++) {
-            _desc_str[1 + i] = str[i];
+        uint8_t buff_avail = sizeof(_desc_str) / sizeof(_desc_str[0]) - 1;
+        if (index >= 4) {
+            const char *product = phy_data.usb_product_present ? phy_data.usb_product : string_desc_arr[2];
+            uint8_t len = MIN(strlen(product), buff_avail);
+            for (int ix = 0; ix < len; chr_count++, ix++) {
+                _desc_str[1 + chr_count] = product[ix];
+            }
+            buff_avail -= len;
+            if (buff_avail > 0) {
+                _desc_str[1 + chr_count++] = ' ';
+                buff_avail--;
+            }
+        }
+        for (int ix = 0; ix < MIN(strlen(str), buff_avail); chr_count++, ix++) {
+            _desc_str[1 + chr_count] = str[ix];
         }
     }
 

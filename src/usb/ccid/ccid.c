@@ -48,6 +48,8 @@
 #define CCID_DATA_BLOCK_RET     0x80
 #define CCID_SLOT_STATUS_RET    0x81 /* non-ICCD result */
 #define CCID_PARAMS_RET         0x82 /* non-ICCD result */
+#define CCID_SETDATARATEANDCLOCKFREQUENCY 0x73
+#define CCID_SETDATARATEANDCLOCKFREQUENCY_RET 0x84
 
 #define CCID_MSG_SEQ_OFFSET     6
 #define CCID_MSG_STATUS_OFFSET  7
@@ -133,7 +135,7 @@ int driver_init_ccid(uint8_t itf) {
     return PICOKEY_OK;
 }
 
-void tud_vendor_rx_cb(uint8_t itf) {
+void tud_vendor_rx_cb(uint8_t itf, const uint8_t *buffer, uint16_t bufsize) {
     uint32_t len = tud_vendor_n_available(itf);
     do {
         uint16_t tlen = 0;
@@ -258,6 +260,16 @@ int driver_process_usb_packet_ccid(uint8_t itf, uint16_t rx_read) {
                 memcpy(&ccid_resp_fast[itf]->apdu, params, sizeof(params));
                 ccid_write_fast(itf, (const uint8_t *)ccid_resp_fast[itf], sizeof(params) + 10);
             }
+            else if (ccid_header[itf]->bMessageType == CCID_SETDATARATEANDCLOCKFREQUENCY) {
+                ccid_resp_fast[itf]->bMessageType = CCID_SETDATARATEANDCLOCKFREQUENCY_RET;
+                ccid_resp_fast[itf]->dwLength = 8;
+                ccid_resp_fast[itf]->bSlot = 0;
+                ccid_resp_fast[itf]->bSeq = ccid_header[itf]->bSeq;
+                ccid_resp_fast[itf]->abRFU0 = ccid_status;
+                ccid_resp_fast[itf]->abRFU1 = 0;
+                memset(&ccid_resp_fast[itf]->apdu, 0, 8);
+                ccid_write_fast(itf, (const uint8_t *)ccid_resp_fast[itf], 18);
+            }
             else if (ccid_header[itf]->bMessageType == CCID_XFR_BLOCK) {
                 apdu.rdata = &ccid_response[itf]->apdu;
                 apdu_sent = apdu_process(itf, &ccid_header[itf]->apdu, (uint16_t)ccid_header[itf]->dwLength);
@@ -336,17 +348,20 @@ static uint16_t ccid_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc,
     TU_VERIFY( itf_desc->bInterfaceClass == TUSB_CLASS_SMART_CARD && itf_desc->bInterfaceSubClass == 0 && itf_desc->bInterfaceProtocol == 0, 0);
 
     //vendord_open expects a CLASS_VENDOR interface class
-    uint16_t const drv_len = sizeof(tusb_desc_interface_t) + sizeof(struct ccid_class_descriptor) + 3 * sizeof(tusb_desc_endpoint_t);
+    uint16_t const drv_len = sizeof(tusb_desc_interface_t) + sizeof(struct ccid_class_descriptor) + TUSB_SMARTCARD_CCID_EPS * sizeof(tusb_desc_endpoint_t);
     memcpy(itf_vendor, itf_desc, sizeof(uint8_t) * max_len);
     ((tusb_desc_interface_t *) itf_vendor)->bInterfaceClass = TUSB_CLASS_VENDOR_SPECIFIC;
+#if TUSB_SMARTCARD_CCID_EPS == 3
     ((tusb_desc_interface_t *) itf_vendor)->bNumEndpoints -= 1;
-    vendord_open(rhport, (tusb_desc_interface_t *) itf_vendor, max_len - sizeof(tusb_desc_endpoint_t));
+    vendord_open(rhport, (tusb_desc_interface_t *)itf_vendor, max_len - sizeof(tusb_desc_endpoint_t));
     tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)((uint8_t *)itf_desc + drv_len - sizeof(tusb_desc_endpoint_t));
     TU_ASSERT(usbd_edpt_open(rhport, desc_ep), 0);
-    free(itf_vendor);
-
     uint8_t msg[] = { 0x50, 0x03 };
     usbd_edpt_xfer(rhport, desc_ep->bEndpointAddress, msg, sizeof(msg));
+#else
+    vendord_open(rhport, (tusb_desc_interface_t *)itf_vendor, max_len);
+#endif
+    free(itf_vendor);
 
     TU_VERIFY(max_len >= drv_len, 0);
 

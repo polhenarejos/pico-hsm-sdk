@@ -144,7 +144,7 @@ int sm_wrap() {
     if (sm_indicator == 0) {
         return PICOKEY_OK;
     }
-    uint8_t input[4096];
+    uint8_t input[2048];
     size_t input_len = 0;
     memset(input, 0, sizeof(input));
     mbedtls_mpi ssc;
@@ -181,16 +181,15 @@ int sm_wrap() {
         else {
             memmove(res_APDU + 4, res_APDU, res_APDU_size);
             res_APDU[1] = 0x82;
-            res_APDU[2] = (uint8_t)(res_APDU_size >> 8);
-            res_APDU[3] = (uint8_t)(res_APDU_size & 0xff);
+            put_uint16_t_be(res_APDU_size, res_APDU + 2);
             res_APDU_size += 4;
         }
         res_APDU[0] = 0x87;
     }
     res_APDU[res_APDU_size++] = 0x99;
     res_APDU[res_APDU_size++] = 2;
-    res_APDU[res_APDU_size++] = apdu.sw >> 8;
-    res_APDU[res_APDU_size++] = apdu.sw & 0xff;
+    put_uint16_t_be(apdu.sw, res_APDU + res_APDU_size);
+    res_APDU_size += 2;
     memcpy(input + input_len, res_APDU, res_APDU_size);
     input_len += res_APDU_size;
     input[input_len++] = 0x80;
@@ -233,7 +232,7 @@ void sm_update_iv() {
 }
 
 int sm_verify() {
-    uint8_t input[4096];
+    uint8_t input[2048];
     memset(input, 0, sizeof(input));
     uint16_t input_len = 0;
     int r = 0;
@@ -242,7 +241,7 @@ int sm_verify() {
     if (data_len % sm_blocksize) {
         data_len += sm_blocksize;
     }
-    if (data_len + (add_header ? sm_blocksize : 0) > 4096) {
+    if (data_len + (add_header ? sm_blocksize : 0) > sizeof(input)) {
         return PICOKEY_WRONG_LENGTH;
     }
     mbedtls_mpi ssc;
